@@ -1,0 +1,27 @@
+tableId=5
+answers=1194
+mappings=0
+rows=0
+rules=12
+datasetRules=1
+outputRules=5
+executableRules=0
+failedRules:
+  age2 missing=[EXAMINE, BIRTH, DAYS]
+  ID3 missing=[PROVINCE, CITY, COUNTY, POINT, SCHOOL, GRADE, NUM]
+  ID是否一致 missing=[ID1, ID3]
+  地市编码缺失 missing=[CITY]
+  县区编码缺失 missing=[COUNTY]
+  城乡编码缺失或异常 missing=[POINT]
+  学校编码缺失 missing=[SCHOOL]
+  性别编码缺失或异常 missing=[GENDER]
+  出生日期缺失 missing=[BIRTH]
+  检测日期缺失 missing=[EXAMINE]
+  年级编码缺失或异常 missing=[GRADE]
+  年龄异常 missing=[AGE2]
+outputs:
+  01-表2-3-ID不一致-幼儿园 = 0
+  02-表2-3-ID重复-幼儿园 = 0
+  03-表2-3-基本信息缺失-幼儿园 = 0
+  04-表2-3-年龄异常-幼儿园 = 0
+  表2-3-清理后-幼儿园 = 0

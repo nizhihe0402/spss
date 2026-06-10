@@ -1,0 +1,17 @@
+﻿statement_type,reason,risk_level
+DESCRIPTIVES,SPSS function not yet supported by engine,MEDIUM
+FREQUENCIES,SPSS function not yet supported by engine,MEDIUM
+CTABLES,SPSS function not yet supported by engine,MEDIUM
+DATASET COPY,SPSS function not yet supported by engine,MEDIUM
+DATASET ACTIVATE,SPSS function not yet supported by engine,MEDIUM
+FILTER OFF,SPSS function not yet supported by engine,MEDIUM
+USE ALL,SPSS function not yet supported by engine,MEDIUM
+LEAVE,SPSS function not yet supported by engine,MEDIUM
+FORMAT,SPSS function not yet supported by engine,MEDIUM
+VARIABLE LEVEL,SPSS function not yet supported by engine,MEDIUM
+VARIABLE WIDTH,SPSS function not yet supported by engine,MEDIUM
+SPLIT FILE,SPSS function not yet supported by engine,MEDIUM
+EXECUTE,SPSS function not yet supported by engine,MEDIUM
+DATEDIFF,SPSS function not yet supported by engine,MEDIUM
+DATEDIF,SPSS function not yet supported by engine,MEDIUM
+RND(,SPSS function not yet supported by engine,MEDIUM

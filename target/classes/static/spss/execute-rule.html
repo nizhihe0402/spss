@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>SPS 规则引擎管理平台 - 执行规则</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.7.6/dist/css/layui.css">
+    <style>
+        body { margin: 0; background: #fff; font-size: 14px; }
+        .layout { display: flex; min-height: 100vh; }
+        .side { width: 200px; background: #252525; color: #fff; }
+        .logo { height: 52px; line-height: 52px; padding-left: 20px; background: #2f6699; font-size: 18px; font-weight: bold; }
+        .menu-title { padding: 16px 20px; font-weight: bold; background: #303030; }
+        .menu-item { padding: 13px 20px; color: #fff; }
+        .menu-item.active { background: #1abc9c; }
+        .main { flex: 1; }
+        .topbar { height: 52px; background: #2f6699; }
+        .content { display: flex; padding: 24px 30px; gap: 24px; }
+        .left-panel { width: 520px; border: 1px solid #f0f0f0; padding: 20px 24px; }
+        .right-panel { flex: 1; border-left: 1px solid #eee; padding-left: 24px; overflow-x: auto; }
+        .form-row { display: flex; align-items: center; margin-bottom: 18px; }
+        .form-row label { width: 90px; text-align: right; margin-right: 16px; }
+        .form-row select { width: 320px; height: 32px; }
+        .file-name { margin-left: 12px; color: #888; }
+        .execute-msg { margin-left: 12px; color: red; }
+        .summary { padding: 12px 14px; background: #eefaf0; margin-bottom: 14px; line-height: 26px; }
+        .summary b { margin-right: 14px; }
+        .result-block { margin-bottom: 28px; }
+        .result-title { font-size: 16px; font-weight: bold; margin: 10px 0 10px; }
+        .passed-title { color: #118f4b; }
+        .failed-title { color: #c0392b; }
+    </style>
+</head>
+<body>
+<div class="layout">
+    <div class="side">
+        <div class="logo">SPS 规则引擎管理平台</div>
+        <div class="menu-title">脚本管理</div>
+        <div class="menu-item">脚本列表</div>
+        <div class="menu-item">上传 SPS</div>
+        <div class="menu-item">规则片段</div>
+        <div class="menu-item active">执行规则</div>
+    </div>
+
+    <div class="main">
+        <div class="topbar"></div>
+        <div class="content">
+            <div class="left-panel">
+                <div style="margin-bottom: 22px; font-size: 15px;">执行规则</div>
+
+                <div class="form-row">
+                    <label>选择脚本</label>
+                    <select id="scriptId">
+                        <option value="286">#286 表2-1</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label>tableId</label>
+                    <input class="layui-input" id="tableId" value="3" style="width: 320px;">
+                </div>
+
+                <div class="form-row">
+                    <label>projectId</label>
+                    <input class="layui-input" id="projectId" value="2" style="width: 320px;">
+                </div>
+
+                <div class="form-row">
+                    <label>year</label>
+                    <input class="layui-input" id="year" value="2025" style="width: 320px;">
+                </div>
+
+                <div class="form-row">
+                    <label>CSV数据</label>
+                    <button type="button" class="layui-btn layui-btn-sm" id="chooseCsv">选择CSV</button>
+                    <span class="file-name" id="csvName">未选择</span>
+                </div>
+
+                <div class="form-row">
+                    <label>映射文件</label>
+                    <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="chooseMapping">选择(可选)</button>
+                    <span class="file-name" id="mappingName">JSON/SQL，用于变量映射</span>
+                </div>
+
+                <div class="form-row">
+                    <label>学生信息</label>
+                    <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="chooseStudent">选择(可选)</button>
+                    <span class="file-name" id="studentName">证件类型/号码JSON</span>
+                </div>
+
+                <div class="form-row">
+                    <label>字段校验</label>
+                    <input type="checkbox" id="fieldCheck">
+                </div>
+
+                <button class="layui-btn" id="executeBtn">执行</button>
+                <span class="execute-msg" id="executeMsg"></span>
+            </div>
+
+            <div class="right-panel">
+                <div style="margin-bottom: 20px; font-size: 15px;">执行结果</div>
+
+                <div id="summary" class="summary" style="display:none;"></div>
+
+                <div class="result-block">
+                    <div class="result-title passed-title">一、通过学生</div>
+                    <table id="passedTable" lay-filter="passedTable"></table>
+                </div>
+
+                <div class="result-block">
+                    <div class="result-title failed-title">二、未通过学生</div>
+                    <table id="failedTable" lay-filter="failedTable"></table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/layui@2.7.6/dist/layui.js"></script>
+<script>
+layui.use(['upload', 'table', 'layer'], function () {
+    var upload = layui.upload;
+    var table = layui.table;
+    var layer = layui.layer;
+
+    var csvFile = null;
+    var mappingFile = null;
+    var studentFile = null;
+
+    // 注意：Layui 当前版本没有 obj.getFile()。
+    // 必须使用 obj.preview(function(index, file){}) 取得原生 File。
+    upload.render({
+        elem: '#chooseCsv',
+        auto: false,
+        accept: 'file',
+        exts: 'csv',
+        choose: function (obj) {
+            obj.preview(function(index, file) {
+                csvFile = file;
+                $('#csvName').text(file.name);
+            });
+        }
+    });
+
+    upload.render({
+        elem: '#chooseMapping',
+        auto: false,
+        accept: 'file',
+        choose: function (obj) {
+            obj.preview(function(index, file) {
+                mappingFile = file;
+                $('#mappingName').text(file.name);
+            });
+        }
+    });
+
+    upload.render({
+        elem: '#chooseStudent',
+        auto: false,
+        accept: 'file',
+        choose: function (obj) {
+            obj.preview(function(index, file) {
+                studentFile = file;
+                $('#studentName').text(file.name);
+            });
+        }
+    });
+
+    $('#executeBtn').on('click', function () {
+        $('#executeMsg').text('');
+
+        if (!csvFile) {
+            $('#executeMsg').text('请先选择CSV数据文件');
+            return;
+        }
+
+        var formData = new FormData();
+        formData.append('scriptId', $('#scriptId').val());
+        formData.append('tableId', $('#tableId').val());
+        formData.append('projectId', $('#projectId').val());
+        formData.append('year', $('#year').val());
+        formData.append('fieldCheck', $('#fieldCheck').is(':checked') ? '1' : '0');
+        formData.append('csvFile', csvFile);
+        if (mappingFile) formData.append('mappingFile', mappingFile);
+        if (studentFile) formData.append('studentFile', studentFile);
+
+        $.ajax({
+            url: '/api/v2/rules/execute',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function (res) {
+                if (res.code !== 0 && res.code !== 200) {
+                    $('#executeMsg').text(res.msg || '执行失败');
+                    return;
+                }
+                renderSplitResult(res.data || {});
+            },
+            error: function (xhr) {
+                $('#executeMsg').text('执行规则请求失败：' + xhr.status);
+            }
+        });
+    });
+
+    function renderSplitResult(data) {
+        var passedList = data.passedList || [];
+        var failedList = data.failedList || [];
+
+        $('#summary').show().html(
+            '<b>执行结果</b>' +
+            '总学生数：' + (data.totalCount || (passedList.length + failedList.length)) +
+            '，通过：' + (data.passedCount || passedList.length) +
+            '，未通过：' + (data.failedCount || failedList.length)
+        );
+
+        table.render({
+            elem: '#passedTable',
+            data: passedList,
+            page: true,
+            limit: 10,
+            cols: [[
+                {field: 'studentId', title: '学生ID', width: 180},
+                {field: 'studentName', title: '姓名', width: 160}
+            ]]
+        });
+
+        var failedRows = failedList.map(function (item) {
+            var ruleNames = item.ruleNames || '';
+            var messages = item.messages || '';
+
+            if ((!ruleNames || !messages) && item.violations) {
+                var rn = [];
+                var msg = [];
+                item.violations.forEach(function (v) {
+                    rn.push(v.ruleName || v.ruleCode || '未知规则');
+                    msg.push(v.message || '');
+                });
+                ruleNames = ruleNames || rn.join('；');
+                messages = messages || msg.join('；');
+            }
+
+            return {
+                studentId: item.studentId,
+                studentName: item.studentName,
+                ruleNames: ruleNames,
+                messages: messages
+            };
+        });
+
+        table.render({
+            elem: '#failedTable',
+            data: failedRows,
+            page: true,
+            limit: 10,
+            cols: [[
+                {field: 'studentId', title: '学生ID', width: 180},
+                {field: 'studentName', title: '姓名', width: 160},
+                {field: 'ruleNames', title: '违反校验规则', width: 280},
+                {field: 'messages', title: '说明', minWidth: 460}
+            ]]
+        });
+    }
+});
+</script>
+</body>
+</html>

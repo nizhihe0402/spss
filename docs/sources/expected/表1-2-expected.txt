@@ -1,0 +1,15 @@
+tableId=2
+answers=984
+mappings=146
+rows=7
+rules=11
+datasetRules=1
+outputRules=6
+executableRules=11
+outputs:
+  01-表1-2-ID不一致 = 7
+  02-表1-2-ID重复 = 0
+  03-表1-2-基本信息缺失 = 0
+  表1-2-清理后 = 0
+  04-表1-2-学校信息缺失 = 0
+  05表1-2-学生情况异常 = 0

@@ -1,0 +1,11 @@
+﻿sps_name,status,total_rules,executable,unexecutable,dataset_rules,output_rules,answers,rows,mappings,unsupported_types,skipped
+修近视筛查语法,SKIPPED,29,0,0,1,12,0,0,0,27,yes
+表1-1,FULL,13,13,0,1,7,3260,17,173,11,no
+表1-2,FULL,11,11,0,1,6,984,7,146,11,no
+表1-3,FULL,30,30,0,1,5,2499,7,760,11,no
+表2-1,PARTIAL,39,24,15,1,15,2957,31,139,28,no
+表2-2,PARTIAL,26,18,8,1,11,1787,38,48,16,no
+表2-3,PARTIAL,12,10,2,1,5,1194,36,54,12,no
+表3-1,FULL,10,10,0,0,4,3532,29,109,10,no
+表3-2,FULL,10,10,0,0,4,8938,69,147,10,no
+表3-3,FULL,10,10,0,0,4,2806,36,96,10,no

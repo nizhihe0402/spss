@@ -1,0 +1,24 @@
+tableId=6
+answers=3532
+mappings=0
+rows=0
+rules=10
+datasetRules=0
+outputRules=4
+executableRules=0
+failedRules:
+  ID3 missing=[PROVINCE, CITY, COUNTY, POINT, SCHOOL, A01, A011]
+  ID是否一致 missing=[ID1, ID3]
+  地市编码缺失 missing=[CITY]
+  县区编码缺失 missing=[COUNTY]
+  城乡编码缺失或异常 missing=[POINT]
+  学校编码缺失 missing=[SCHOOL]
+  年级编码缺失或异常 missing=[A01]
+  性别编码缺失或异常 missing=[A02]
+  住校编码缺失或异常 missing=[A04]
+  民族编码缺失或异常 missing=[A05]
+outputs:
+  01-表3-1-ID不一致 = 0
+  02-表3-1-D重复 = 0
+  03-表3-1-基本信息缺失 = 0
+  表3-1-清理后 = 0

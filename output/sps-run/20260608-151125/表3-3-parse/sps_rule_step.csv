@@ -1,0 +1,11 @@
+﻿rule_code,step_no,step_type,source,target,condition,expression
+表3-3-R002,1,COMPUTE,,ID是否一致,"","id1 - ID3"
+表3-3-R002,2,RECODE,ID是否一致,,"",""
+表3-3-R003,1,RECODE,city,,"",""
+表3-3-R004,1,RECODE,county,,"",""
+表3-3-R005,1,RECODE,point,,"",""
+表3-3-R006,1,RECODE,school,,"",""
+表3-3-R007,1,RECODE,A01,,"",""
+表3-3-R008,1,RECODE,A02,,"",""
+表3-3-R009,1,RECODE,A04,,"",""
+表3-3-R010,1,RECODE,A05,,"",""

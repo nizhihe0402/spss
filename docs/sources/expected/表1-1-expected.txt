@@ -1,0 +1,16 @@
+tableId=1
+answers=3260
+mappings=173
+rows=17
+rules=13
+datasetRules=1
+outputRules=7
+executableRules=13
+outputs:
+  01-表1-1-ID不一致 = 17
+  02-表1-1-ID重复 = 0
+  03-表1-1-基本信息缺失 = 4
+  表1-1-清理后 = 0
+  04-表1-1-人员配备不一致 = 0
+  05-表1-1-经费不一致 = 2
+  06-表1-1-学校情况不一致 = 2

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>SPS 规则引擎管理平台 - 执行规则</title>
+    <link rel="stylesheet" href="/layui/css/layui.css">
+    <style>
+        body { margin: 0; background: #f7f7f7; color: #333; }
+        .layout { display: flex; min-height: 100vh; }
+        .side { width: 200px; background: #2f2f2f; color: #fff; }
+        .brand { height: 52px; line-height: 52px; background: #2f6699; padding-left: 22px; font-size: 18px; font-weight: 600; }
+        .menu-title { padding: 16px 22px; font-weight: 600; }
+        .menu-item { padding: 13px 22px; color: #fff; }
+        .menu-item.active { background: #20b7a6; }
+        .main { flex: 1; }
+        .top { height: 52px; background: #2f6699; }
+        .content { display: flex; padding: 16px; gap: 16px; }
+        .panel { background: #fff; border: 1px solid #eee; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+        .left-panel { width: 42%; min-width: 520px; }
+        .right-panel { flex: 1; min-width: 560px; }
+        .panel-title { padding: 14px 16px; border-bottom: 1px solid #eee; font-size: 15px; }
+        .panel-body { padding: 16px; }
+        .form-row { display: flex; align-items: center; margin-bottom: 18px; }
+        .form-row label { width: 100px; text-align: right; padding-right: 14px; }
+        .file-name { margin-left: 10px; color: #888; }
+        .msg { margin-left: 14px; color: #009688; }
+        .msg.error { color: red; }
+        .result-summary { background: #f0fff0; padding: 12px 14px; margin-bottom: 14px; border: 1px solid #d9f5d9; }
+        .summary-line b { margin-right: 6px; }
+        .ok { color: #009688; }
+        .bad { color: #d9534f; }
+        .result-block { margin-top: 12px; }
+        .result-block h3 { font-size: 15px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+<div class="layout">
+    <div class="side">
+        <div class="brand">SPS 规则引擎管理平台</div>
+        <div class="menu-title">脚本管理</div>
+        <div class="menu-item">脚本列表</div>
+        <div class="menu-item">上传 SPS</div>
+        <div class="menu-item">规则片段</div>
+        <div class="menu-item active">执行规则</div>
+    </div>
+    <div class="main">
+        <div class="top"></div>
+        <div class="content">
+            <div class="panel left-panel">
+                <div class="panel-title">执行规则</div>
+                <div class="panel-body">
+                    <div class="form-row">
+                        <label>选择脚本</label>
+                        <select id="scriptSelect" class="layui-input" style="width: 320px;">
+                            <option value="">请选择脚本</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>table_id</label>
+                        <input id="tableId" class="layui-input" style="width: 160px;" placeholder="如 3">
+                    </div>
+                    <div class="form-row">
+                        <label>project_id</label>
+                        <input id="projectId" class="layui-input" style="width: 160px;" placeholder="如 2">
+                    </div>
+                    <div class="form-row">
+                        <label>year</label>
+                        <input id="year" class="layui-input" style="width: 160px;" placeholder="如 2025">
+                    </div>
+                    <div class="form-row">
+                        <label>CSV数据</label>
+                        <button type="button" class="layui-btn layui-btn-sm" id="csvFileBtn">选择CSV</button>
+                        <span id="csvFileName" class="file-name">未选择</span>
+                    </div>
+                    <div class="form-row">
+                        <label>映射文件</label>
+                        <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="mappingFileBtn">选择(可选)</button>
+                        <span id="mappingFileName" class="file-name">JSON/SQL，用于变量映射</span>
+                    </div>
+                    <div class="form-row">
+                        <label>学生信息</label>
+                        <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="studentFileBtn">选择(可选)</button>
+                        <span id="studentFileName" class="file-name">证件类型/号码JSON</span>
+                    </div>
+                    <div class="form-row">
+                        <label>字段校验</label>
+                        <input type="checkbox" id="fieldCheck">
+                    </div>
+                    <div class="form-row">
+                        <label></label>
+                        <button type="button" class="layui-btn" id="executeBtn">执行</button>
+                        <span id="executeMsg" class="msg"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel right-panel">
+                <div class="panel-title">执行结果</div>
+                <div class="panel-body">
+                    <div id="resultSummary" class="result-summary"></div>
+
+                    <div id="passedPanel" class="result-block" style="display:none;">
+                        <h3>通过学生</h3>
+                        <table id="passedTable" lay-filter="passedTable"></table>
+                    </div>
+
+                    <div id="failedPanel" class="result-block" style="display:none;">
+                        <h3>未通过学生</h3>
+                        <table id="failedTable" lay-filter="failedTable"></table>
+                    </div>
+
+                    <div id="legacyFieldResult" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/jquery.min.js"></script>
+<script src="/layui/layui.js"></script>
+<script src="/spss/js/rule-execute-v2.js"></script>
+</body>
+</html>
