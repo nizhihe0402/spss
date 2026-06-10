@@ -1,5 +1,0 @@
-﻿output_code,output_name,output_type,select_condition,spss_source_size
-表3-3-O001,"01-表3-3-ID不一致",ERROR_GROUP,"ID是否一致 = 1",102
-表3-3-O002,"02-表3-3-ID重复",ERROR_GROUP,"PrimaryFirst1 = 0",107
-表3-3-O003,"03-表3-3-基本信息缺失",ERROR_GROUP,"地市编码缺失 = 1 OR 县区编码缺失=1 OR 城乡编码缺失或异常=1 OR 学校编码缺失=1 OR 年级编码缺失或异常=1 OR 性别编码缺失或异常=1 OR 住校编码缺失或异常=1 OR 民族编码缺失或异常=1",230
-表3-3-O004,"表3-3-清理后",CLEAN_DATA,"地市编码缺失 = 0 AND 县区编码缺失=0 AND 城乡编码缺失或异常=0 AND 学校编码缺失=0 AND 年级编码缺失或异常=0 AND 性别编码缺失或异常=0 AND 住校编码缺失或异常=0 AND 民族编码缺失或异常=0 AND ID是否一致=0 AND PrimaryFirst1=1",261

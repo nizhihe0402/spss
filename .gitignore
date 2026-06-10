@@ -1,0 +1,24 @@
+# Maven build output
+/target/
+
+# Runtime and generated outputs
+/output/
+
+# Local IDE files
+/.idea/
+*.iml
+
+# Local assistant/tool state
+/.claude/settings.local.json
+
+# Local packaged archives
+/pom.zip
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# OS metadata
+.DS_Store
+Thumbs.db

@@ -1,8 +1,0 @@
-﻿output_code,output_name,output_type,select_condition,spss_source_size
-表1-1-O001,"01-表1-1-ID不一致",ERROR_GROUP,"ID是否一致 = 1",107
-表1-1-O002,"02-表1-1-ID重复",ERROR_GROUP,"PrimaryFirst1 = 0",107
-表1-1-O003,"03-表1-1-基本信息缺失",ERROR_GROUP,"地市编码缺失 =1 OR 县区编码缺失=1 OR 城乡编码缺失或异常 =1",157
-表1-1-O004,"表1-1-清理后",CLEAN_DATA,"地市编码缺失 = 0 AND 县区编码缺失=0 AND 城乡编码缺失或异常=0 AND ID是否一致=0 AND PrimaryFirst1=1",184
-表1-1-O005,"04-表1-1-人员配备不一致",ERROR_GROUP,"人员配备1=1 OR 人员配备2=1 OR 人员配备3 = 1",125
-表1-1-O006,"05-表1-1-经费不一致",ERROR_GROUP,"学生常见病项目经费1=1 OR 配套经费1=1 OR 学生常见病项目经费2=1 OR 业务经费3=1",142
-表1-1-O007,"06-表1-1-学校情况不一致",ERROR_GROUP,"学校情况=1",99
