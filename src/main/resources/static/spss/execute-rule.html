@@ -5,7 +5,7 @@
     <title>SPS 规则引擎管理平台 - 执行规则</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.7.6/dist/css/layui.css">
     <style>
-        body { margin: 0; background: #fff; font-size: 14px; }
+        body { margin: 0; background: #fff; font-size: 14px; color: #333; }
         .layout { display: flex; min-height: 100vh; }
         .side { width: 200px; background: #252525; color: #fff; }
         .logo { height: 52px; line-height: 52px; padding-left: 20px; background: #2f6699; font-size: 18px; font-weight: bold; }
@@ -24,16 +24,13 @@
         .execute-msg { margin-left: 12px; color: red; }
         .summary { padding: 12px 14px; background: #eefaf0; margin-bottom: 14px; line-height: 26px; }
         .summary b { margin-right: 14px; }
-        .result-block { margin-bottom: 28px; }
         .result-title { font-size: 16px; font-weight: bold; margin: 10px 0 10px; }
-        .passed-title { color: #118f4b; }
-        .failed-title { color: #c0392b; }
     </style>
 </head>
 <body>
 <div class="layout">
     <div class="side">
-        <div class="logo">SPS 规则引擎管理平台</div>
+        <div class="logo">SPS 规则引擎</div>
         <div class="menu-title">脚本管理</div>
         <div class="menu-item">脚本列表</div>
         <div class="menu-item">上传 SPS</div>
@@ -50,41 +47,41 @@
                 <div class="form-row">
                     <label>选择脚本</label>
                     <select id="scriptId">
-                        <option value="286">#286 表2-1</option>
+                        <option value="">请选择脚本</option>
                     </select>
                 </div>
 
                 <div class="form-row">
                     <label>tableId</label>
-                    <input class="layui-input" id="tableId" value="3" style="width: 320px;">
+                    <input class="layui-input" id="tableId" style="width: 320px;">
                 </div>
 
                 <div class="form-row">
                     <label>projectId</label>
-                    <input class="layui-input" id="projectId" value="2" style="width: 320px;">
+                    <input class="layui-input" id="projectId" style="width: 320px;">
                 </div>
 
                 <div class="form-row">
                     <label>year</label>
-                    <input class="layui-input" id="year" value="2025" style="width: 320px;">
+                    <input class="layui-input" id="year" style="width: 320px;">
                 </div>
 
                 <div class="form-row">
-                    <label>CSV数据</label>
-                    <button type="button" class="layui-btn layui-btn-sm" id="chooseCsv">选择CSV</button>
+                    <label>CSV 数据</label>
+                    <button type="button" class="layui-btn layui-btn-sm" id="chooseCsv">选择 CSV</button>
                     <span class="file-name" id="csvName">未选择</span>
                 </div>
 
                 <div class="form-row">
                     <label>映射文件</label>
-                    <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="chooseMapping">选择(可选)</button>
-                    <span class="file-name" id="mappingName">JSON/SQL，用于变量映射</span>
+                    <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="chooseMapping">选择</button>
+                    <span class="file-name" id="mappingName">可选，JSON/SQL</span>
                 </div>
 
                 <div class="form-row">
                     <label>学生信息</label>
-                    <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="chooseStudent">选择(可选)</button>
-                    <span class="file-name" id="studentName">证件类型/号码JSON</span>
+                    <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="chooseStudent">选择</button>
+                    <span class="file-name" id="studentName">可选，证件类型/号码 JSON</span>
                 </div>
 
                 <div class="form-row">
@@ -98,18 +95,9 @@
 
             <div class="right-panel">
                 <div style="margin-bottom: 20px; font-size: 15px;">执行结果</div>
-
                 <div id="summary" class="summary" style="display:none;"></div>
-
-                <div class="result-block">
-                    <div class="result-title passed-title">一、通过学生</div>
-                    <table id="passedTable" lay-filter="passedTable"></table>
-                </div>
-
-                <div class="result-block">
-                    <div class="result-title failed-title">二、未通过学生</div>
-                    <table id="failedTable" lay-filter="failedTable"></table>
-                </div>
+                <div class="result-title">学生规则结果</div>
+                <table id="resultTable" lay-filter="resultTable"></table>
             </div>
         </div>
     </div>
@@ -118,17 +106,15 @@
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/layui@2.7.6/dist/layui.js"></script>
 <script>
-layui.use(['upload', 'table', 'layer'], function () {
+layui.use(['upload', 'table'], function () {
     var upload = layui.upload;
     var table = layui.table;
-    var layer = layui.layer;
-
     var csvFile = null;
     var mappingFile = null;
     var studentFile = null;
 
-    // 注意：Layui 当前版本没有 obj.getFile()。
-    // 必须使用 obj.preview(function(index, file){}) 取得原生 File。
+    loadScripts();
+
     upload.render({
         elem: '#chooseCsv',
         auto: false,
@@ -168,9 +154,8 @@ layui.use(['upload', 'table', 'layer'], function () {
 
     $('#executeBtn').on('click', function () {
         $('#executeMsg').text('');
-
         if (!csvFile) {
-            $('#executeMsg').text('请先选择CSV数据文件');
+            $('#executeMsg').text('请先选择 CSV 数据文件');
             return;
         }
 
@@ -195,7 +180,7 @@ layui.use(['upload', 'table', 'layer'], function () {
                     $('#executeMsg').text(res.msg || '执行失败');
                     return;
                 }
-                renderSplitResult(res.data || {});
+                renderRuleResult(res.data || {});
             },
             error: function (xhr) {
                 $('#executeMsg').text('执行规则请求失败：' + xhr.status);
@@ -203,63 +188,63 @@ layui.use(['upload', 'table', 'layer'], function () {
         });
     });
 
-    function renderSplitResult(data) {
-        var passedList = data.passedList || [];
-        var failedList = data.failedList || [];
-
+    function renderRuleResult(data) {
+        var rows = data.students || [];
         $('#summary').show().html(
-            '<b>执行结果</b>' +
-            '总学生数：' + (data.totalCount || (passedList.length + failedList.length)) +
-            '，通过：' + (data.passedCount || passedList.length) +
-            '，未通过：' + (data.failedCount || failedList.length)
+            '<b>学生数：</b>' + (data.studentCount || rows.length) +
+            '<b>规则数：</b>' + (data.ruleCount || 0) +
+            '<b>全部通过学生：</b>' + (data.passedStudentCount || 0) +
+            '<b>存在未通过学生：</b>' + (data.failedStudentCount || 0)
         );
 
         table.render({
-            elem: '#passedTable',
-            data: passedList,
+            elem: '#resultTable',
+            data: rows,
             page: true,
-            limit: 10,
+            limit: 20,
+            limits: [20, 50, 100, 200],
+            text: {none: '暂无执行结果'},
             cols: [[
-                {field: 'studentId', title: '学生ID', width: 180},
-                {field: 'studentName', title: '姓名', width: 160}
+                {field: 'studentId', title: '学生ID', width: 170, templet: function (d) {
+                    return escapeHtml(d.studentId || d.studentKey || '');
+                }},
+                {field: 'studentName', title: '姓名', width: 120, templet: function (d) {
+                    return escapeHtml(d.studentName || '');
+                }},
+                {field: 'passedText', title: '通过', minWidth: 220, templet: multilineCell('passedText')},
+                {field: 'failedText', title: '未通过', minWidth: 420, templet: multilineCell('failedText')}
             ]]
         });
+    }
 
-        var failedRows = failedList.map(function (item) {
-            var ruleNames = item.ruleNames || '';
-            var messages = item.messages || '';
-
-            if ((!ruleNames || !messages) && item.violations) {
-                var rn = [];
-                var msg = [];
-                item.violations.forEach(function (v) {
-                    rn.push(v.ruleName || v.ruleCode || '未知规则');
-                    msg.push(v.message || '');
-                });
-                ruleNames = ruleNames || rn.join('；');
-                messages = messages || msg.join('；');
-            }
-
-            return {
-                studentId: item.studentId,
-                studentName: item.studentName,
-                ruleNames: ruleNames,
-                messages: messages
-            };
+    function loadScripts() {
+        $.getJSON('/api/scripts', function (scripts) {
+            var select = $('#scriptId');
+            select.empty().append('<option value="">请选择脚本</option>');
+            (scripts || []).forEach(function (script) {
+                select.append(
+                    '<option value="' + escapeHtml(script.id) + '">#' +
+                    escapeHtml(script.id) + ' ' + escapeHtml(script.name || '') +
+                    '</option>'
+                );
+            });
         });
+    }
 
-        table.render({
-            elem: '#failedTable',
-            data: failedRows,
-            page: true,
-            limit: 10,
-            cols: [[
-                {field: 'studentId', title: '学生ID', width: 180},
-                {field: 'studentName', title: '姓名', width: 160},
-                {field: 'ruleNames', title: '违反校验规则', width: 280},
-                {field: 'messages', title: '说明', minWidth: 460}
-            ]]
-        });
+    function multilineCell(field) {
+        return function (d) {
+            return '<div style="white-space: pre-line; line-height: 22px;">' + escapeHtml(d[field] || '') + '</div>';
+        };
+    }
+
+    function escapeHtml(value) {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 });
 </script>

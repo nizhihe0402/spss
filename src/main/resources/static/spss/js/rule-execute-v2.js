@@ -1,12 +1,3 @@
-/**
- * SPSS Rule Engine V2 执行规则页面脚本。
- *
- * 目标：
- * 1. 上传 CSV
- * 2. 调用 /api/v2/rules/execute
- * 3. 结果分两部分展示：通过学生 / 未通过学生
- * 4. Layui 上传不使用 obj.getFile()
- */
 (function () {
     var selectedCsvFile = null;
     var selectedMappingFile = null;
@@ -15,6 +6,8 @@
     layui.use(['upload', 'table', 'layer'], function () {
         var upload = layui.upload;
         var layer = layui.layer;
+
+        loadScripts();
 
         upload.render({
             elem: '#csvFileBtn',
@@ -106,7 +99,7 @@
                 }
 
                 $('#executeMsg').removeClass('error').text('执行完成');
-                renderSplitResult(res.data || {});
+                renderRuleResult(res.data || {});
             },
             error: function (xhr) {
                 var msg = '执行规则请求失败';
@@ -119,6 +112,20 @@
         });
     }
 
+    function loadScripts() {
+        $.getJSON('/api/scripts', function (scripts) {
+            var select = $('#scriptSelect');
+            select.empty().append('<option value="">请选择脚本</option>');
+            (scripts || []).forEach(function (script) {
+                select.append(
+                    '<option value="' + escapeHtml(script.id) + '">#' +
+                    escapeHtml(script.id) + ' ' + escapeHtml(script.name || '') +
+                    '</option>'
+                );
+            });
+        });
+    }
+
     function clearResult() {
         $('#resultSummary').html('');
         $('#passedPanel').hide();
@@ -126,96 +133,52 @@
         $('#legacyFieldResult').hide();
     }
 
-    window.renderSplitResult = function (data) {
-        var passedList = data.passedList || [];
-        var failedList = data.failedList || [];
-
-        var totalRows = data.totalRows || 0;
-        var studentCount = data.studentCount || (passedList.length + failedList.length);
-        var passedCount = data.passedCount || passedList.length;
-        var failedCount = data.failedCount || failedList.length;
+    window.renderRuleResult = function (data) {
+        var rows = data.students || [];
+        var studentCount = data.studentCount || rows.length;
+        var ruleCount = data.ruleCount || 0;
+        var passedStudentCount = data.passedStudentCount || 0;
+        var failedStudentCount = data.failedStudentCount || 0;
 
         $('#resultSummary').html(
             '<div class="summary-line">' +
-            '总行数：<b>' + escapeHtml(totalRows) + '</b>，' +
-            '学生数：<b>' + escapeHtml(studentCount) + '</b>，' +
-            '通过：<b class="ok">' + escapeHtml(passedCount) + '</b>，' +
-            '未通过：<b class="bad">' + escapeHtml(failedCount) + '</b>' +
+            '学生数：<b>' + escapeHtml(studentCount) + '</b>' +
+            '规则数：<b>' + escapeHtml(ruleCount) + '</b>' +
+            '全部通过学生：<b class="ok">' + escapeHtml(passedStudentCount) + '</b>' +
+            '存在未通过学生：<b class="bad">' + escapeHtml(failedStudentCount) + '</b>' +
             '</div>'
         );
 
         $('#passedPanel').show();
-        $('#failedPanel').show();
+        $('#failedPanel').hide();
 
         layui.table.render({
             elem: '#passedTable',
-            data: passedList,
+            data: rows,
             page: true,
             limit: 20,
             limits: [20, 50, 100, 200],
-            text: {none: '暂无通过学生'},
+            text: {none: '暂无执行结果'},
             cols: [[
-                {field: 'studentId', title: '学生ID', width: 180, templet: function(d){return escapeHtml(d.studentId || d.studentKey || '');}},
-                {field: 'studentName', title: '姓名', minWidth: 140, templet: function(d){return escapeHtml(d.studentName || '');}}
-            ]]
-        });
-
-        var failedRows = [];
-        for (var i = 0; i < failedList.length; i++) {
-            var item = failedList[i] || {};
-            var violations = item.violations || [];
-            if (violations.length === 0) {
-                failedRows.push({
-                    studentId: item.studentId,
-                    studentName: item.studentName,
-                    studentKey: item.studentKey,
-                    ruleNames: '',
-                    messages: '',
-                    detail: ''
-                });
-                continue;
-            }
-
-            for (var j = 0; j < violations.length; j++) {
-                var v = violations[j] || {};
-                failedRows.push({
-                    studentId: item.studentId,
-                    studentName: item.studentName,
-                    studentKey: item.studentKey,
-                    level: v.level || '',
-                    ruleCode: v.ruleCode || '',
-                    ruleName: v.ruleName || '',
-                    message: v.message || '',
-                    lineNo: v.lineNo || '',
-                    fieldName: v.fieldName || '',
-                    tableId: v.tableId || '',
-                    questionId: v.questionId || '',
-                    optionId: v.optionId || '',
-                    content: v.content || ''
-                });
-            }
-        }
-
-        layui.table.render({
-            elem: '#failedTable',
-            data: failedRows,
-            page: true,
-            limit: 20,
-            limits: [20, 50, 100, 200],
-            text: {none: '暂无未通过学生'},
-            cols: [[
-                {field: 'studentId', title: '学生ID', width: 170, templet: function(d){return escapeHtml(d.studentId || d.studentKey || '');}},
-                {field: 'studentName', title: '姓名', width: 120, templet: function(d){return escapeHtml(d.studentName || '');}},
-                {field: 'level', title: '级别', width: 85},
-                {field: 'ruleName', title: '违反规则', width: 180},
-                {field: 'message', title: '原因说明', minWidth: 420},
-                {field: 'lineNo', title: '行', width: 80},
-                {field: 'fieldName', title: '字段', width: 120},
-                {field: 'questionId', title: '问题ID', width: 120},
-                {field: 'optionId', title: '选项ID', width: 120}
+                {field: 'studentId', title: '学生ID', width: 170, templet: function (d) {
+                    return escapeHtml(d.studentId || d.studentKey || '');
+                }},
+                {field: 'studentName', title: '姓名', width: 120, templet: function (d) {
+                    return escapeHtml(d.studentName || '');
+                }},
+                {field: 'passedText', title: '通过', minWidth: 220, templet: multilineCell('passedText')},
+                {field: 'failedText', title: '未通过', minWidth: 420, templet: multilineCell('failedText')}
             ]]
         });
     };
+
+    window.renderSplitResult = window.renderRuleResult;
+
+    function multilineCell(field) {
+        return function (d) {
+            return '<div style="white-space: pre-line; line-height: 22px;">' + escapeHtml(d[field] || '') + '</div>';
+        };
+    }
 
     function escapeHtml(value) {
         if (value === null || value === undefined) {
