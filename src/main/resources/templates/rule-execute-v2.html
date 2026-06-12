@@ -17,7 +17,7 @@
         .content { display: flex; padding: 16px; gap: 16px; }
         .panel { background: #fff; border: 1px solid #eee; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
         .left-panel { width: 42%; min-width: 520px; }
-        .right-panel { flex: 1; min-width: 560px; }
+        .right-panel { flex: 1; min-width: 680px; }
         .panel-title { padding: 14px 16px; border-bottom: 1px solid #eee; font-size: 15px; }
         .panel-body { padding: 16px; }
         .form-row { display: flex; align-items: center; margin-bottom: 18px; }
@@ -26,7 +26,7 @@
         .msg { margin-left: 14px; color: #009688; }
         .msg.error { color: red; }
         .result-summary { background: #f0fff0; padding: 12px 14px; margin-bottom: 14px; border: 1px solid #d9f5d9; }
-        .summary-line b { margin-right: 6px; }
+        .summary-line b { margin-right: 16px; }
         .ok { color: #009688; }
         .bad { color: #d9534f; }
         .result-block { margin-top: 12px; }
@@ -36,7 +36,7 @@
 <body>
 <div class="layout">
     <div class="side">
-        <div class="brand">SPS 规则引擎管理平台</div>
+        <div class="brand">SPS 规则引擎</div>
         <div class="menu-title">脚本管理</div>
         <div class="menu-item">脚本列表</div>
         <div class="menu-item">上传 SPS</div>
@@ -57,30 +57,30 @@
                     </div>
                     <div class="form-row">
                         <label>table_id</label>
-                        <input id="tableId" class="layui-input" style="width: 160px;" placeholder="如 3">
+                        <input id="tableId" class="layui-input" style="width: 160px;" placeholder="例如 3">
                     </div>
                     <div class="form-row">
                         <label>project_id</label>
-                        <input id="projectId" class="layui-input" style="width: 160px;" placeholder="如 2">
+                        <input id="projectId" class="layui-input" style="width: 160px;" placeholder="例如 2">
                     </div>
                     <div class="form-row">
                         <label>year</label>
-                        <input id="year" class="layui-input" style="width: 160px;" placeholder="如 2025">
+                        <input id="year" class="layui-input" style="width: 160px;" placeholder="例如 2025">
                     </div>
                     <div class="form-row">
-                        <label>CSV数据</label>
-                        <button type="button" class="layui-btn layui-btn-sm" id="csvFileBtn">选择CSV</button>
+                        <label>CSV 数据</label>
+                        <button type="button" class="layui-btn layui-btn-sm" id="csvFileBtn">选择 CSV</button>
                         <span id="csvFileName" class="file-name">未选择</span>
                     </div>
                     <div class="form-row">
                         <label>映射文件</label>
-                        <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="mappingFileBtn">选择(可选)</button>
-                        <span id="mappingFileName" class="file-name">JSON/SQL，用于变量映射</span>
+                        <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="mappingFileBtn">选择</button>
+                        <span id="mappingFileName" class="file-name">可选，JSON/SQL</span>
                     </div>
                     <div class="form-row">
                         <label>学生信息</label>
-                        <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="studentFileBtn">选择(可选)</button>
-                        <span id="studentFileName" class="file-name">证件类型/号码JSON</span>
+                        <button type="button" class="layui-btn layui-btn-primary layui-btn-sm" id="studentFileBtn">选择</button>
+                        <span id="studentFileName" class="file-name">可选，证件类型/号码 JSON</span>
                     </div>
                     <div class="form-row">
                         <label>字段校验</label>
@@ -98,17 +98,13 @@
                 <div class="panel-title">执行结果</div>
                 <div class="panel-body">
                     <div id="resultSummary" class="result-summary"></div>
-
                     <div id="passedPanel" class="result-block" style="display:none;">
-                        <h3>通过学生</h3>
+                        <h3>学生规则结果</h3>
                         <table id="passedTable" lay-filter="passedTable"></table>
                     </div>
-
                     <div id="failedPanel" class="result-block" style="display:none;">
-                        <h3>未通过学生</h3>
                         <table id="failedTable" lay-filter="failedTable"></table>
                     </div>
-
                     <div id="legacyFieldResult" style="display:none;"></div>
                 </div>
             </div>
