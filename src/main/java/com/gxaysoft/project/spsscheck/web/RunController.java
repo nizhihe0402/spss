@@ -13,19 +13,20 @@ import com.gxaysoft.project.spsscheck.validation.AnswerDataValidationReport;
 import com.gxaysoft.project.spsscheck.validation.AnswerDataValidator;
 import com.gxaysoft.project.spsscheck.validation.StudentValidationResultBuilder;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.nio.file.*;
 import java.util.*;
 
 @RestController
 @RequestMapping("/api")
 public class RunController {
+    private static final Logger log = LoggerFactory.getLogger(RunController.class);
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -49,11 +50,9 @@ public class RunController {
             result.put("splitResult", splitResult);
             result.put("validationReport", validationReport.toMap(500));
         } catch (Exception e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
+            log.error("校验失败", e);
             result.put("code", 1);
             result.put("msg", "校验失败: " + e.getMessage());
-            result.put("trace", sw.toString());
         }
         return result;
     }
@@ -194,11 +193,9 @@ public class RunController {
             result.put("totalErrorRows", shown >= 100 ? "100+" : String.valueOf(shown));
 
         } catch (Exception e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
+            log.error("执行失败", e);
             result.put("code", 1);
             result.put("msg", "执行失败: " + e.getMessage());
-            result.put("trace", sw.toString());
         }
         return result;
     }

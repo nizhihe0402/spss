@@ -22,7 +22,7 @@ class RuleControllerV2CorrectionUpdateTest {
         body.put("correctionWriteSource", false);
         body.put("correctionDescription", null);
 
-        RuleControllerV2.CorrectionUpdate update = RuleControllerV2.CorrectionUpdate.from(body);
+        CorrectionUpdate update = CorrectionUpdate.from(body);
 
         assertEquals(1, update.enabled);
         assertEquals("NORMALIZE_REGION_CODE", update.type);
@@ -43,7 +43,7 @@ class RuleControllerV2CorrectionUpdateTest {
         body.put("correction_variables", "SCHOOL");
         body.put("correction_write_clean", "true");
 
-        RuleControllerV2.CorrectionUpdate update = RuleControllerV2.CorrectionUpdate.from(body);
+        CorrectionUpdate update = CorrectionUpdate.from(body);
 
         assertEquals(0, update.enabled);
         assertEquals("FILL_SCHOOL_CODE", update.type);

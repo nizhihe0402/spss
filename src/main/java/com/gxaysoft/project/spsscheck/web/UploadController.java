@@ -10,6 +10,8 @@ import com.gxaysoft.project.spsscheck.persistence.ScriptQuestionMappingService;
 import com.gxaysoft.project.spsscheck.persistence.RuleCorrectionPlan;
 import com.gxaysoft.project.spsscheck.persistence.SourceQuestionMappingSyncService;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -17,8 +19,6 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
@@ -27,6 +27,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/api")
 public class UploadController {
+    private static final Logger log = LoggerFactory.getLogger(UploadController.class);
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -87,11 +88,9 @@ public class UploadController {
             result.put("outputRules", outputRules.size());
             result.put("msg", "上传成功: " + rules.size() + " 条规则(V2)");
         } catch (Exception e) {
+            log.error("解析失败", e);
             result.put("code", 1);
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
             result.put("msg", "解析失败: " + e.getMessage());
-            result.put("trace", sw.toString());
         }
         return result;
     }
