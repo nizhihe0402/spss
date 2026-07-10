@@ -1019,33 +1019,57 @@ function needsRunSchool(tableId){
 function renderStudentSplitResult(data){
   data = data || {};
   var rows = data.students || [];
+  // 拆分：全部通过 vs 存在未通过
+  var passedRows = [], failedRows = [];
+  rows.forEach(function(r){
+    if(r.failedText && String(r.failedText).trim()){
+      failedRows.push(r);
+    }else{
+      passedRows.push(r);
+    }
+  });
+
   $('#studentSplitSummary').show().html(
     '<b>学生规则结果</b>：学生数 '+htmlEscape(data.studentCount || rows.length)+
     '，规则数 '+htmlEscape(data.ruleCount || 0)+
-    '，全部通过学生 <span style="color:#009688;font-weight:bold">'+htmlEscape(data.passedStudentCount || 0)+'</span>'+
-    '，存在未通过学生 <span style="color:#c00;font-weight:bold">'+htmlEscape(data.failedStudentCount || 0)+'</span>'
+    '，全部通过 <span style="color:#009688;font-weight:bold">'+htmlEscape(passedRows.length)+'</span>'+
+    '，存在未通过 <span style="color:#c00;font-weight:bold">'+htmlEscape(failedRows.length)+'</span>'
   );
 
+  // 表1: 通过的学生
   $('#passedStudentPanel').show();
-  $('#passedStudentPanel h3').text('学生规则结果');
-  $('#failedStudentPanel').hide();
-
+  $('#passedStudentPanel h3').text('通过学生（' + passedRows.length + '）');
   table.render({
     elem:'#passedStudentTable',
-    data:rows,
-    page:true,
-    limit:20,
-    limits:[20,50,100,200],
-    text:{none:'暂无执行结果'},
+    data:passedRows,
+    page:true, limit:20, limits:[20,50,100,200],
+    text:{none:'无'},
     cols:[[
       {field:'studentId',title:'学生ID',width:150,templet:function(d){return htmlEscape(d.studentId || d.studentKey || '');}},
       {field:'studentName',title:'姓名',width:120,templet:function(d){return htmlEscape(d.studentName || '');}},
-      {field:'passedText',title:'通过',minWidth:220,templet:function(d){return multilineRuleCell(d.passedText);}},
-      {field:'failedText',title:'未通过',minWidth:360,templet:function(d){return multilineRuleCell(d.failedText);}},
-      {field:'failedDetailText',title:'详细说明',minWidth:420,templet:function(d){return multilineRuleCell(d.failedDetailText);}}
+      {field:'passedText',title:'通过的规则',minWidth:260,templet:function(d){return multilineRuleCell(d.passedText);}}
     ]],
     done:function(){
       $('#passedStudentTable').next('.layui-table-view').addClass('student-rule-result-table');
+    }
+  });
+
+  // 表2: 未通过的学生
+  $('#failedStudentPanel').show();
+  $('#failedStudentPanel h3').text('未通过学生（' + failedRows.length + '）');
+  table.render({
+    elem:'#failedStudentTable',
+    data:failedRows,
+    page:true, limit:20, limits:[20,50,100,200],
+    text:{none:'无'},
+    cols:[[
+      {field:'studentId',title:'学生ID',width:150,templet:function(d){return htmlEscape(d.studentId || d.studentKey || '');}},
+      {field:'studentName',title:'姓名',width:120,templet:function(d){return htmlEscape(d.studentName || '');}},
+      {field:'failedText',title:'未通过的规则',minWidth:300,templet:function(d){return multilineRuleCell(d.failedText);}},
+      {field:'failedDetailText',title:'详细说明',minWidth:400,templet:function(d){return multilineRuleCell(d.failedDetailText);}}
+    ]],
+    done:function(){
+      $('#failedStudentTable').next('.layui-table-view').addClass('student-rule-result-table');
     }
   });
 }
