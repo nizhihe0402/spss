@@ -5,6 +5,8 @@ import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,11 +25,13 @@ public class RuleExecutionPersistenceService {
 
     private final JdbcTemplate jdbc;
 
+    @Autowired
+    private RuleExecutionPersistenceService self; // 自注入，用于触发 @Transactional AOP 代理
+
     public RuleExecutionPersistenceService(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    @Transactional
     public SaveSummary saveDbExecutionResult(DbRuleExecutionDataLoader.Request request,
                                              String answerTable,
                                              PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
@@ -36,7 +40,10 @@ public class RuleExecutionPersistenceService {
                 Collections.<String, Map<String, String>>emptyMap());
     }
 
-    @Transactional
+    /**
+     * 保存执行结果到 _clean / _fail 表。
+     * DDL（建表）与 DML（写数据）分离：MySQL 中 DDL 触发隐式提交会打断事务管理。
+     */
     public SaveSummary saveDbExecutionResult(DbRuleExecutionDataLoader.Request request,
                                              String answerTable,
                                              PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
@@ -44,28 +51,32 @@ public class RuleExecutionPersistenceService {
                                              Map<String, Map<String, String>> correctionCleanValues) {
         String cleanTable = cleanTableName(answerTable);
         String failTable = failTableName(answerTable);
-        long cleanTaskId = System.currentTimeMillis();
 
         log.info("开始保存执行结果: answerTable={}, cleanTable={}, failTable={}", answerTable, cleanTable, failTable);
 
+        // Step 1: 确保表存在（DDL，不能在事务内执行）
         ensureCleanTable(answerTable, cleanTable);
         ensureFailTable(answerTable, failTable);
+
+        // Step 2: 写入数据（DML，独立事务，通过 self 触发 AOP 代理）
+        return self.doSaveData(request, answerTable, csvLoad, spssResult, correctionCleanValues,
+                cleanTable, failTable);
+    }
+
+    @Transactional
+    public SaveSummary doSaveData(DbRuleExecutionDataLoader.Request request,
+                                   String answerTable,
+                                   PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
+                                   Map<String, Object> spssResult,
+                                   Map<String, Map<String, String>> correctionCleanValues,
+                                   String cleanTable, String failTable) {
+        long cleanTaskId = System.currentTimeMillis();
 
         List<Long> cleanIds = cleanSourceIds(csvLoad, spssResult);
         List<FailDetail> failures = failDetails(spssResult);
         log.info("清洗统计: answers={}, cleanIds={}, failures={}",
                 csvLoad != null && csvLoad.getAnswers() != null ? csvLoad.getAnswers().size() : 0,
                 cleanIds.size(), failures.size());
-
-        // 打印前几个失败详情用于调试
-        if (!failures.isEmpty()) {
-            FailDetail first = failures.get(0);
-            log.info("失败示例: studentKey={}, ruleCode={}, sourceId(from answer map)={}",
-                    first.studentKey, first.ruleCode,
-                    csvLoad.getAnswers().stream()
-                        .filter(a -> first.studentKey.equals(a.getSampleKey()))
-                        .findFirst().map(a -> String.valueOf(a.getRawId())).orElse("NOT FOUND"));
-        }
 
         clearPreviousResults(request, answerTable, cleanTable, failTable, cleanIds);
 
@@ -169,7 +180,6 @@ public class RuleExecutionPersistenceService {
         ensureColumn(failTable, "reason_detail", "LONGTEXT NULL");
     }
 
-    @Transactional
     private void clearPreviousResults(DbRuleExecutionDataLoader.Request request,
                                       String answerTable,
                                       String cleanTable,
@@ -194,7 +204,6 @@ public class RuleExecutionPersistenceService {
         }
     }
 
-    @Transactional
     private int insertCleanRows(String answerTable, String cleanTable, List<Long> cleanIds, long cleanTaskId) {
         if (cleanIds.isEmpty()) {
             return 0;
@@ -253,7 +262,6 @@ public class RuleExecutionPersistenceService {
      * 插入失败记录到 _fail 表：从源表复制完整行数据 + 错误元数据。
      * 新 _fail 表结构镜像源表（CREATE TABLE ... LIKE），故用 INSERT ... SELECT。
      */
-    @Transactional
     private int insertFailRows(DbRuleExecutionDataLoader.Request request,
                                String answerTable,
                                String failTable,
