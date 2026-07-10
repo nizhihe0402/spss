@@ -279,7 +279,17 @@ RECODE BMI (SYSMIS=1)(ELSE=0) INTO BMI异常或缺失."></textarea>
         <div class="layui-form-item" id="runSchoolRow">
           <label class="layui-form-label" style="width:80px">学校</label>
           <div class="layui-input-block" style="margin-left:110px">
-            <select id="runSchoolId" lay-search><option value="">-- 请选择学校 --</option></select>
+            <select id="runSchoolId" lay-filter="runSchoolId" lay-search><option value="">-- 请选择学校 --</option></select>
+          </div>
+        </div>
+        <div class="layui-form-item" id="runGradeRow" style="display:none">
+          <label class="layui-form-label" style="width:80px">年级</label>
+          <div class="layui-input-inline" style="width:150px">
+            <select id="runGrade" lay-filter="runGrade"><option value="">-- 全部 --</option></select>
+          </div>
+          <label class="layui-form-label" style="width:80px">班级</label>
+          <div class="layui-input-inline" style="width:150px">
+            <select id="runClass"><option value="">-- 全部 --</option></select>
           </div>
         </div>
         <button class="layui-btn" id="runExecuteBtn">执行</button>
@@ -822,14 +832,15 @@ function initRun(){
   }
   loadRunTables();
 
-  // 脚本选择 → 自动填充项目/表/年份
+  // 脚本选择 → 自动填充项目/表/年份，锁定项目/表/来源
   form.on('select(runScriptId)', function(data){
     var meta = runScriptsCache[data.value];
-    if(meta){
-      if(meta.projectId){ $('#runProjectId').val(meta.projectId); form.render('select'); }
+    if(data.value && meta){
+      if(meta.projectId){ $('#runProjectId').val(meta.projectId); }
       if(meta.year){ $('#runYear').val(meta.year); }
       if(meta.projectId){ loadRunTables(meta.projectId); }
-      // 延迟设置表（等表列表加载完）
+      $('#runProjectId, #runTableId, #runSource').prop('disabled', true);
+      form.render('select');
       if(meta.tableId){
         setTimeout(function(){
           $('#runTableId').val(meta.tableId);
@@ -837,6 +848,41 @@ function initRun(){
           updateRunSchoolVisibility();
         }, 500);
       }
+    }else{
+      $('#runProjectId, #runTableId, #runSource').prop('disabled', false);
+      form.render('select');
+    }
+  });
+
+  // 学校选择 → 加载年级
+  form.on('select(runSchoolId)', function(data){
+    if(data.value){
+      $('#runGradeRow').show();
+      $.get('/api/data/grades?schoolId='+data.value, function(grades){
+        var html = '<option value="">-- 全部 --</option>';
+        (grades||[]).forEach(function(g){ html += '<option value="'+g.gradeCode+'">'+htmlEscape(g.gradeName||g.gradeCode)+'</option>'; });
+        $('#runGrade').html(html).val('');
+        $('#runClass').html('<option value="">-- 全部 --</option>');
+        form.render('select');
+      });
+    }else{
+      $('#runGradeRow').hide();
+    }
+  });
+
+  // 年级选择 → 加载班级
+  form.on('select(runGrade)', function(data){
+    var schoolId = $('#runSchoolId').val();
+    if(data.value && schoolId){
+      $.get('/api/data/classes?schoolId='+schoolId+'&grade='+encodeURIComponent(data.value), function(classes){
+        var html = '<option value="">-- 全部 --</option>';
+        (classes||[]).forEach(function(c){ html += '<option value="'+c.classCode+'">'+htmlEscape(c.className||c.classCode)+'</option>'; });
+        $('#runClass').html(html).val('');
+        form.render('select');
+      });
+    }else{
+      $('#runClass').html('<option value="">-- 全部 --</option>');
+      form.render('select');
     }
   });
 
@@ -883,6 +929,10 @@ function initRun(){
     fd.append('divisionId', divisionId);
     fd.append('source', $('#runSource').val() || 'normal');
     if(needsRunSchool(tableId)) fd.append('schoolId', schoolId);
+    var grade = $('#runGrade').val();
+    if(grade) fd.append('grade', grade);
+    var cls = $('#runClass').val();
+    if(cls) fd.append('studentClass', cls);
     $.ajax({url:'/api/execute/db', method:'POST', data:fd, processData:false, contentType:false,
       success:function(res){
         renderStudentSplitResult(res.data || res.splitResult || buildSplitFromValidationReport(res.validationReport));

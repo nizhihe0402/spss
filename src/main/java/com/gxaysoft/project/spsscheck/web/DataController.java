@@ -62,6 +62,28 @@ public class DataController {
     }
 
     /**
+     * 年级列表 — 从 bus_student 加载某学校下不重复的年级。
+     */
+    @GetMapping("/grades")
+    public List<Map<String, Object>> listGrades(@RequestParam Long schoolId) {
+        return jdbc.queryForList(
+            "SELECT DISTINCT grade AS gradeCode, grade AS gradeName " +
+            "FROM bus_student WHERE school_id=? AND del_flag='0' ORDER BY grade", schoolId);
+    }
+
+    /**
+     * 班级列表 — 从 bus_student 加载某学校某年级下不重复的班级。
+     */
+    @GetMapping("/classes")
+    public List<Map<String, Object>> listClasses(@RequestParam Long schoolId,
+                                                  @RequestParam String grade) {
+        return jdbc.queryForList(
+            "SELECT DISTINCT student_class AS classCode, student_class AS className " +
+            "FROM bus_student WHERE school_id=? AND grade=? AND del_flag='0' ORDER BY student_class",
+            schoolId, grade);
+    }
+
+    /**
      * 调查表列表 — 从 bus_table 加载，可选按 projectId 过滤（通过 bus_project_table 关联）。
      * 返回: [{tableId, tableName}]
      */
