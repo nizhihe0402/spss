@@ -236,50 +236,43 @@ RECODE BMI (SYSMIS=1)(ELSE=0) INTO BMI异常或缺失."></textarea>
         <div class="layui-form-item">
           <label class="layui-form-label" style="width:80px">选择脚本</label>
           <div class="layui-input-block" style="margin-left:110px">
-            <select id="runScriptId" lay-search><option value="">-- 请选择 --</option></select>
+            <select id="runScriptId" lay-filter="runScriptId" lay-search><option value="">-- 请选择 --</option></select>
           </div>
         </div>
         <div class="layui-form-item">
-          <label class="layui-form-label" style="width:80px">项目/年份</label>
-          <div class="layui-input-inline" style="width:150px">
-            <input id="runProjectId" class="layui-input" value="2" placeholder="projectId">
-          </div>
-          <div class="layui-input-inline" style="width:120px">
-            <input id="runYear" class="layui-input" value="2025" placeholder="year">
+          <label class="layui-form-label" style="width:80px">项目</label>
+          <div class="layui-input-block" style="margin-left:110px">
+            <select id="runProjectId" lay-filter="runProjectId" lay-search>
+              <option value="">-- 请选择项目 --</option>
+            </select>
           </div>
         </div>
         <div class="layui-form-item">
           <label class="layui-form-label" style="width:80px">表/来源</label>
-          <div class="layui-input-inline" style="width:150px">
-            <select id="runTableId" lay-filter="runTableId">
-              <option value="">-- 选择表 --</option>
-              <option value="1">表1-1</option>
-              <option value="2">表1-2</option>
-              <option value="10">表1-3</option>
-              <option value="3">表2-1</option>
-              <option value="4">表2-2</option>
-              <option value="5">表2-3</option>
-              <option value="6">表3-1</option>
-              <option value="7">表3-2</option>
-              <option value="8">表3-3</option>
+          <div class="layui-input-inline" style="width:180px">
+            <select id="runTableId" lay-filter="runTableId" lay-search>
+              <option value="">-- 请选择表 --</option>
             </select>
           </div>
-          <div class="layui-input-inline" style="width:150px">
+          <div class="layui-input-inline" style="width:140px">
             <select id="runSource">
               <option value="normal">普通数据</option>
               <option value="intervene">干预数据</option>
             </select>
           </div>
         </div>
+        <div class="layui-form-item" style="display:none">
+          <input id="runYear" class="layui-input">
+        </div>
         <div class="layui-form-item">
           <label class="layui-form-label" style="width:80px">地区</label>
-          <div class="layui-input-inline" style="width:120px">
+          <div class="layui-input-inline" style="width:110px">
             <select id="runProvinceId" lay-filter="runProvinceId" lay-search><option value="">省</option></select>
           </div>
-          <div class="layui-input-inline" style="width:120px">
+          <div class="layui-input-inline" style="width:110px">
             <select id="runCityId" lay-filter="runCityId" lay-search><option value="">市</option></select>
           </div>
-          <div class="layui-input-inline" style="width:120px">
+          <div class="layui-input-inline" style="width:110px">
             <select id="runDivisionId" lay-filter="runDivisionId" lay-search><option value="">区县</option></select>
           </div>
         </div>
@@ -287,26 +280,6 @@ RECODE BMI (SYSMIS=1)(ELSE=0) INTO BMI异常或缺失."></textarea>
           <label class="layui-form-label" style="width:80px">学校</label>
           <div class="layui-input-block" style="margin-left:110px">
             <select id="runSchoolId" lay-search><option value="">-- 请选择学校 --</option></select>
-          </div>
-        </div>
-        <div class="layui-form-item">
-          <label class="layui-form-label" style="width:80px">映射文件</label>
-          <div class="layui-input-block" style="margin-left:110px">
-            <button class="layui-btn layui-btn-sm layui-btn-primary" id="runMapBtn"><i class="layui-icon layui-icon-file"></i> 选择(可选)</button>
-            <span id="runMapName" style="margin-left:8px;color:#999">JSON/SQL，用于变量映射</span>
-          </div>
-        </div>
-        <div class="layui-form-item">
-          <label class="layui-form-label" style="width:80px">学生信息</label>
-          <div class="layui-input-block" style="margin-left:110px">
-            <button class="layui-btn layui-btn-sm layui-btn-primary" id="runStuBtn"><i class="layui-icon layui-icon-file"></i> 选择(可选)</button>
-            <span id="runStuName" style="margin-left:8px;color:#999">证件类型/号码JSON</span>
-          </div>
-        </div>
-        <div class="layui-form-item">
-          <label class="layui-form-label" style="width:80px">字段校验</label>
-          <div class="layui-input-block" style="margin-left:110px">
-            <input type="checkbox" id="strictValidate" title="校验有 ERROR 时停止执行" lay-skin="primary">
           </div>
         </div>
         <button class="layui-btn" id="runExecuteBtn">执行</button>
@@ -809,63 +782,80 @@ function showCorrectionEditForm(data){
 }
 
 // ═══ Run Rules ═══
-var runMapFile, runStuFile;
-
-function bindRunFileUpload(elem, exts, labelSelector, setter){
-  upload.render({
-    elem: elem,
-    accept: 'file',
-    exts: exts,
-    auto: false,
-    multiple: false,
-    choose: function(obj){
-      obj.preview(function(index, file){
-        setter(file);
-        $(labelSelector).text(file && file.name ? file.name : '已选择文件');
-      });
-    },
-    error: function(){ layer.msg('选择文件失败'); }
-  });
-}
+var runScriptsCache = {}; // 脚本 -> {tableId, projectId, year} 缓存
 
 function initRun(){
-  $.get('/api/scripts', function(res){
+  // 加载脚本列表
+  $.get('/api/scripts', function(scripts){
     var html = '<option value="">-- 请选择 --</option>';
-    res.forEach(function(s){ html += '<option value="'+s.id+'">#'+s.id+' '+htmlEscape(s.name)+'</option>'; });
+    (scripts||[]).forEach(function(s){
+      runScriptsCache[s.id] = {tableId:s.tableId, projectId:s.projectId, year:s.year};
+      html += '<option value="'+s.id+'">#'+s.id+' '+htmlEscape(s.name)+'</option>';
+    });
     $('#runScriptId').html(html);
     form.render('select');
   });
+
+  // 加载项目列表
+  $.get('/api/data/projects', function(projects){
+    var html = '<option value="">-- 请选择项目 --</option>';
+    (projects||[]).forEach(function(p){
+      html += '<option value="'+p.projectId+'" data-year="'+(p.year||'')+'">'
+        +'#'+p.projectId+' '+htmlEscape(p.projectName||'')+' ('+(p.year||'')+')</option>';
+    });
+    $('#runProjectId').html(html);
+    form.render('select');
+  });
+
+  // 加载表列表
+  function loadRunTables(projectId){
+    var url = '/api/data/tables' + (projectId ? '?projectId='+projectId : '');
+    $.get(url, function(tables){
+      var html = '<option value="">-- 请选择表 --</option>';
+      (tables||[]).forEach(function(t){
+        html += '<option value="'+t.tableId+'">表'+t.tableId+' '+htmlEscape(t.tableName||'')+'</option>';
+      });
+      $('#runTableId').html(html);
+      form.render('select');
+    });
+  }
+  loadRunTables();
+
+  // 脚本选择 → 自动填充项目/表/年份
+  form.on('select(runScriptId)', function(data){
+    var meta = runScriptsCache[data.value];
+    if(meta){
+      if(meta.projectId){ $('#runProjectId').val(meta.projectId); form.render('select'); }
+      if(meta.year){ $('#runYear').val(meta.year); }
+      if(meta.projectId){ loadRunTables(meta.projectId); }
+      // 延迟设置表（等表列表加载完）
+      if(meta.tableId){
+        setTimeout(function(){ $('#runTableId').val(meta.tableId); form.render('select'); }, 500);
+      }
+    }
+  });
+
   loadRegionOptions(null, '#runProvinceId', '省');
 
-  $('#runProvinceId').off('change').on('change', function(){
-    onRunProvinceChanged($(this).val());
+  $('#runProvinceId').off('change').on('change', function(){ onRunProvinceChanged($(this).val()); });
+  $('#runCityId').off('change').on('change', function(){ onRunCityChanged($(this).val()); });
+  $('#runDivisionId').off('change').on('change', function(){ loadRunSchools(); });
+  $('#runTableId').off('change').on('change', function(){ updateRunSchoolVisibility(); loadRunSchools(); });
+
+  form.on('select(runProvinceId)', function(data){ onRunProvinceChanged(data.value); });
+  form.on('select(runCityId)', function(data){ onRunCityChanged(data.value); });
+  form.on('select(runDivisionId)', function(data){ loadRunSchools(); });
+  form.on('select(runTableId)', function(){ updateRunSchoolVisibility(); loadRunSchools(); });
+  // 项目切换 → 加载对应的表列表
+  form.on('select(runProjectId)', function(data){
+    loadRunTables(data.value);
+    $('#runTableId').val(''); form.render('select');
+    var sel = $('#runProjectId').find('option:selected');
+    var year = sel.attr('data-year') || '';
+    $('#runYear').val(year);
   });
-  $('#runCityId').off('change').on('change', function(){
-    onRunCityChanged($(this).val());
-  });
-  $('#runDivisionId').off('change').on('change', function(){
-    loadRunSchools();
-  });
-  $('#runTableId').off('change').on('change', function(){
-    updateRunSchoolVisibility();
-    loadRunSchools();
-  });
-  form.on('select(runProvinceId)', function(data){
-    onRunProvinceChanged(data.value);
-  });
-  form.on('select(runCityId)', function(data){
-    onRunCityChanged(data.value);
-  });
-  form.on('select(runDivisionId)', function(data){
-    loadRunSchools();
-  });
-  form.on('select(runTableId)', function(){
-    updateRunSchoolVisibility();
-    loadRunSchools();
-  });
+
   updateRunSchoolVisibility();
-  bindRunFileUpload('#runMapBtn', 'json|sql', '#runMapName', function(file){ runMapFile = file; });
-  bindRunFileUpload('#runStuBtn', 'json', '#runStuName', function(file){ runStuFile = file; });
 
   $('#runExecuteBtn').off('click').click(function(){
     var scriptId = $('#runScriptId').val();
@@ -875,8 +865,7 @@ function initRun(){
     var divisionId = $('#runDivisionId').val();
     var schoolId = $('#runSchoolId').val();
     if(!scriptId){ layer.msg('请选择脚本'); return; }
-    if(!projectId){ layer.msg('请输入projectId'); return; }
-    if(!year){ layer.msg('请输入年份'); return; }
+    if(!projectId){ layer.msg('请选择项目'); return; }
     if(!tableId){ layer.msg('请选择表'); return; }
     if(!divisionId){ layer.msg('请选择区县'); return; }
     if(needsRunSchool(tableId) && !schoolId){ layer.msg('表2/表3执行必须选择学校'); return; }
@@ -889,10 +878,6 @@ function initRun(){
     fd.append('divisionId', divisionId);
     fd.append('source', $('#runSource').val() || 'normal');
     if(needsRunSchool(tableId)) fd.append('schoolId', schoolId);
-    if(runMapFile){ fd.append('mapping', runMapFile, runMapFile.name); fd.append('mappingFile', runMapFile, runMapFile.name); }
-    if(runStuFile){ fd.append('student', runStuFile, runStuFile.name); fd.append('studentFile', runStuFile, runStuFile.name); }
-    var strictValidate = $('#strictValidate').is(':checked');
-    fd.append('strictValidate', strictValidate);
     $.ajax({url:'/api/execute/db', method:'POST', data:fd, processData:false, contentType:false,
       success:function(res){
         renderStudentSplitResult(res.data || res.splitResult || buildSplitFromValidationReport(res.validationReport));
