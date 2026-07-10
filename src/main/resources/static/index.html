@@ -91,39 +91,36 @@ pre{margin:0}
       </div>
       <div class="layui-inline" style="margin-bottom:10px">
         <label class="layui-form-label" style="width:70px">项目</label>
-        <div class="layui-input-inline" style="width:150px">
-          <input id="uploadProjectId" class="layui-input" value="2" placeholder="projectId">
-        </div>
-      </div>
-      <div class="layui-inline" style="margin-bottom:10px">
-        <label class="layui-form-label" style="width:70px">年份</label>
-        <div class="layui-input-inline" style="width:120px">
-          <input id="uploadYear" class="layui-input" value="2025" placeholder="year">
+        <div class="layui-input-inline" style="width:200px">
+          <select id="uploadProjectId" lay-filter="uploadProjectId" lay-search>
+            <option value="">-- 请选择项目 --</option>
+          </select>
         </div>
       </div>
       <div class="layui-inline" style="margin-bottom:10px">
         <label class="layui-form-label" style="width:70px">表</label>
-        <div class="layui-input-inline" style="width:150px">
-          <select id="uploadTableId">
-            <option value="">-- 自动检测 --</option>
-            <option value="1">表1-1</option><option value="2">表1-2</option><option value="10">表1-3</option>
-            <option value="3">表2-1</option><option value="4">表2-2</option><option value="5">表2-3</option>
-            <option value="6">表3-1</option><option value="7">表3-2</option><option value="8">表3-3</option>
-          </select>
-        </div>
-      </div>
-      <div class="layui-inline" style="margin-bottom:10px">
-        <label class="layui-form-label" style="width:90px">项目类型</label>
-        <div class="layui-input-inline" style="width:150px">
-          <select id="uploadProjectType">
-            <option value="">-- 请选择 --</option>
-            <option value="常见病">常见病</option>
-            <option value="综合干预">综合干预</option>
+        <div class="layui-input-inline" style="width:200px">
+          <select id="uploadTableId" lay-search>
+            <option value="">-- 请选择表 --</option>
           </select>
         </div>
       </div>
     </div>
-    <div class="layui-upload-drag" id="uploadBox">
+    <div class="layui-form-item" style="margin-bottom:0">
+      <div class="layui-inline">
+        <label class="layui-form-label" style="width:70px">年份</label>
+        <div class="layui-input-inline" style="width:100px">
+          <input id="uploadYear" class="layui-input" readonly placeholder="自动">
+        </div>
+      </div>
+      <div class="layui-inline">
+        <label class="layui-form-label" style="width:90px">项目类型</label>
+        <div class="layui-input-inline" style="width:100px">
+          <input id="uploadProjectType" class="layui-input" readonly placeholder="自动">
+        </div>
+      </div>
+    </div>
+    <div class="layui-upload-drag" id="uploadBox" style="margin-top:10px">
       <i class="layui-icon layui-icon-upload" style="font-size:40px;color:#999"></i>
       <p>点击或将文件拖拽到这里上传</p>
     </div>
@@ -414,6 +411,43 @@ function loadScripts(){
 
 // ═══ Upload ═══
 function initUpload(){
+  // 加载项目列表
+  $.get('/api/data/projects', function(projects){
+    var html = '<option value="">-- 请选择项目 --</option>';
+    (projects||[]).forEach(function(p){
+      html += '<option value="'+p.projectId+'" data-year="'+(p.year||'')+'" data-flag="'+(p.interveneFlag||'0')+'">'
+        +'#'+p.projectId+' '+htmlEscape(p.projectName||'')
+        + (p.year ? ' ('+p.year+')' : '') +'</option>';
+    });
+    $('#uploadProjectId').html(html);
+    form.render('select');
+  });
+
+  // 加载表列表
+  function loadTables(projectId){
+    var url = '/api/data/tables' + (projectId ? '?projectId='+projectId : '');
+    $.get(url, function(tables){
+      var html = '<option value="">-- 自动检测 --</option>';
+      (tables||[]).forEach(function(t){
+        html += '<option value="'+t.tableId+'">表'+t.tableId+' '+htmlEscape(t.tableName||'')+'</option>';
+      });
+      $('#uploadTableId').html(html);
+      form.render('select');
+    });
+  }
+  loadTables();
+
+  // 项目切换 → 回填年份/类型，刷新表列表
+  form.on('select(uploadProjectId)', function(data){
+    var sel = data.elem && data.elem[data.elem.selectedIndex];
+    var year = sel ? $(sel).attr('data-year') : '';
+    var flag = sel ? $(sel).attr('data-flag') : '0';
+    $('#uploadYear').val(year || '');
+    $('#uploadProjectType').val(flag === '1' ? '综合干预' : '常见病');
+    loadTables(data.value);
+  });
+
+  // 上传组件
   upload.render({
     elem:'#uploadBox', url:'/api/upload', accept:'file', exts:'sps',
     data: {
