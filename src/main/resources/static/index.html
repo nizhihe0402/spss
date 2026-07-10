@@ -695,9 +695,13 @@ function previewSnippet(){
           });
           html += '</div>';
         }
+        // SPSS source
+        if(r.spssSource){
+          html += '<details style="margin-top:3px"><summary style="font-size:11px;color:#2B5E8E;cursor:pointer">SPSS源码</summary><pre style="font-size:11px;background:#f0f0f0;padding:4px;max-height:120px;overflow:auto">'+htmlEscape(r.spssSource)+'</pre></details>';
+        }
         // Java preview
         if(r.javaPreview){
-          html += '<pre style="margin-top:4px;font-size:11px;color:#888;max-height:40px;overflow:hidden">'+htmlEscape(r.javaPreview)+'</pre>';
+          html += '<details style="margin-top:3px"><summary style="font-size:11px;color:#5FB878;cursor:pointer">Java预览</summary><pre style="font-size:11px;background:#f5fff5;padding:4px;max-height:80px;overflow:auto">'+htmlEscape(r.javaPreview)+'</pre></details>';
         }
         html += '</div>';
       });
