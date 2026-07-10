@@ -66,7 +66,7 @@ public final class StudentSpssRuleResultBuilder {
                 }
 
                 Map<String, Object> item = new LinkedHashMap<String, Object>();
-                item.put("studentId", info.studentId);
+                item.put("studentId", info.studentId != null ? String.valueOf(info.studentId) : null);
                 item.put("studentKey", info.studentKey);
                 item.put("studentName", info.studentName);
                 item.put("passedRuleCodes", passedCodes);
