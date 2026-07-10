@@ -1,5 +1,6 @@
 package com.gxaysoft.project.spsscheck.engine.model;
 
+import com.gxaysoft.project.spsscheck.expression.ArithmeticExpression;
 import com.gxaysoft.project.spsscheck.model.RowContext;
 import com.gxaysoft.project.spsscheck.parser.SpssUtil;
 import java.math.BigDecimal;
@@ -16,9 +17,7 @@ public class ComputeAction implements StepAction {
 
     @Override
     public void execute(RowContext row) {
-        // Note: uses reflection-like approach via ArithmeticExpression for now
-        // AST pre-compilation will be added in Task 2.2
-        row.put(target, new com.gxaysoft.project.spsscheck.expression.ArithmeticExpression(expression, row).parse());
+        row.put(target, ArithmeticExpression.compile(expression).evaluate(row));
     }
 
     @Override

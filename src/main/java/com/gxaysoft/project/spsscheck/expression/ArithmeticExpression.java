@@ -435,6 +435,10 @@ public class ArithmeticExpression {
         }
     }
 
+    public static CompiledExpression compile(String expression) {
+        return new CompiledExpression(expression);
+    }
+
     /** Check if an expression looks like MISSING(var) — used by ConditionExpression */
     static boolean isMissingCall(String expr) {
         return expr.trim().toUpperCase(Locale.ROOT).matches("MISSING\\s*\\(.*\\)");
