@@ -124,9 +124,13 @@ pre{margin:0}
     </div>
     <div class="layui-upload-drag" id="uploadBox" style="margin-top:10px">
       <i class="layui-icon layui-icon-upload" style="font-size:40px;color:#999"></i>
-      <p>点击或将文件拖拽到这里上传</p>
+      <p>点击或将文件拖拽到这里选择文件</p>
     </div>
-    <div id="uploadResult" style="margin-top:15px"></div>
+    <div style="margin-top:15px">
+      <span id="uploadFileName" style="color:#999;margin-right:10px">未选择文件</span>
+      <button class="layui-btn" id="uploadSubmitBtn" onclick="submitUpload()">提交上传</button>
+      <div id="uploadResult" style="margin-top:10px"></div>
+    </div>
   </div>
 </div>
 </script>
@@ -462,6 +466,20 @@ function loadScripts(){
 }
 
 // ═══ Upload ═══
+var uploadFile = null; // 选中的文件
+
+// 自动生成标题: 项目名称 + 表名称
+function updateUploadTitle(){
+  var projSel = $('#uploadProjectId').find('option:selected');
+  var tableSel = $('#uploadTableId').find('option:selected');
+  var projName = projSel.attr('data-name') || '';
+  var tableName = tableSel.attr('data-name') || '';
+  var parts = [];
+  if(projName) parts.push(projName);
+  if(tableName) parts.push(tableName);
+  $('#uploadTitle').val(parts.join(' - '));
+}
+
 function initUpload(){
   // 加载项目列表
   $.get('/api/data/projects', function(projects){
@@ -489,19 +507,7 @@ function initUpload(){
   }
   loadTables();
 
-  // 自动生成标题: 项目名称 + 表名称
-  function updateUploadTitle(){
-    var projSel = $('#uploadProjectId').find('option:selected');
-    var tableSel = $('#uploadTableId').find('option:selected');
-    var projName = projSel.attr('data-name') || '';
-    var tableName = tableSel.attr('data-name') || '';
-    var parts = [];
-    if(projName) parts.push(projName);
-    if(tableName) parts.push(tableName);
-    $('#uploadTitle').val(parts.join(' - '));
-  }
-
-  // 项目切换 → 回填年份/类型，刷新表列表，更新标题
+  // 项目切换
   form.on('select(uploadProjectId)', function(data){
     var sel = data.elem && data.elem[data.elem.selectedIndex];
     var year = sel ? $(sel).attr('data-year') : '';
@@ -512,37 +518,56 @@ function initUpload(){
     updateUploadTitle();
   });
 
-  // 表切换 → 更新标题
+  // 表切换
   form.on('select(uploadTableId)', function(){
     updateUploadTitle();
   });
 
-  // 上传组件
+  // 文件选择组件 — 仅选择，不自动上传
   upload.render({
-    elem:'#uploadBox', url:'/api/upload', accept:'file', exts:'sps',
-    before: function(){
-      var projectId = $('#uploadProjectId').val();
-      var tableId = $('#uploadTableId').val();
-      if(!projectId){ layer.msg('请选择项目'); return false; }
-      if(!tableId){ layer.msg('请选择表'); return false; }
-      updateUploadTitle();
-      this.data = {
-        title: $('#uploadTitle').val(),
-        projectId: projectId,
-        year: $('#uploadYear').val(),
-        tableId: tableId,
-        projectType: $('#uploadProjectType').val()
-      };
-    },
-    done:function(res){
+    elem:'#uploadBox', accept:'file', exts:'sps', auto:false,
+    choose: function(obj){
+      obj.preview(function(index, file){
+        uploadFile = file;
+        $('#uploadFileName').text(file.name || '已选择文件').css('color','#333');
+      });
+    }
+  });
+}
+
+// 手动提交上传
+function submitUpload(){
+  var projectId = $('#uploadProjectId').val();
+  var tableId = $('#uploadTableId').val();
+  if(!projectId){ layer.msg('请选择项目'); return; }
+  if(!tableId){ layer.msg('请选择表'); return; }
+  if(!uploadFile){ layer.msg('请选择 SPS 文件'); return; }
+
+  updateUploadTitle(); // 上传前强制刷新标题
+  $('#uploadResult').html('<span style="color:#999">上传中...</span>');
+
+  var fd = new FormData();
+  fd.append('file', uploadFile);
+  fd.append('title', $('#uploadTitle').val()||'');
+  fd.append('projectId', projectId);
+  fd.append('year', $('#uploadYear').val()||'');
+  fd.append('tableId', tableId);
+  fd.append('projectType', $('#uploadProjectType').val()||'');
+
+  $.ajax({url:'/api/upload', method:'POST', data:fd, processData:false, contentType:false,
+    success:function(res){
       if(res.code==0){
         $('#uploadResult').html('<div class="layui-bg-green" style="padding:10px;color:#fff">上传成功! 脚本ID='+res.scriptId
           +', '+res.rules+'条规则, '+res.outputRules+'个输出分组</div>');
+        uploadFile = null;
+        $('#uploadFileName').text('未选择文件').css('color','#999');
       }else{
         $('#uploadResult').html('<div class="layui-bg-red" style="padding:10px;color:#fff">'+res.msg+'</div>');
       }
     },
-    error:function(){ $('#uploadResult').html('<div class="layui-bg-red" style="padding:10px;color:#fff">上传失败</div>') }
+    error:function(){
+      $('#uploadResult').html('<div class="layui-bg-red" style="padding:10px;color:#fff">上传失败</div>');
+    }
   });
 }
 
