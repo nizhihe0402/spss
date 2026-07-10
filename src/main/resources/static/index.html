@@ -521,12 +521,16 @@ function initUpload(){
   upload.render({
     elem:'#uploadBox', url:'/api/upload', accept:'file', exts:'sps',
     before: function(){
-      updateUploadTitle(); // 上传前强制刷新标题
+      var projectId = $('#uploadProjectId').val();
+      var tableId = $('#uploadTableId').val();
+      if(!projectId){ layer.msg('请选择项目'); return false; }
+      if(!tableId){ layer.msg('请选择表'); return false; }
+      updateUploadTitle();
       this.data = {
         title: $('#uploadTitle').val(),
-        projectId: $('#uploadProjectId').val(),
+        projectId: projectId,
         year: $('#uploadYear').val(),
-        tableId: $('#uploadTableId').val(),
+        tableId: tableId,
         projectType: $('#uploadProjectType').val()
       };
     },
