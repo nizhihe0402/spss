@@ -35,7 +35,8 @@ public class RuleExecutionPersistenceService {
                                              PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
                                              Map<String, Object> spssResult) {
         return saveDbExecutionResult(request, answerTable, csvLoad, spssResult,
-                Collections.<String, Map<String, String>>emptyMap());
+                Collections.<String, Map<String, String>>emptyMap(),
+                Collections.<String, Long>emptyMap());
     }
 
     /**
@@ -46,7 +47,8 @@ public class RuleExecutionPersistenceService {
                                              String answerTable,
                                              PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
                                              Map<String, Object> spssResult,
-                                             Map<String, Map<String, String>> correctionCleanValues) {
+                                             Map<String, Map<String, String>> correctionCleanValues,
+                                             Map<String, Long> varToQid) {
         String cleanTable = cleanTableName(answerTable);
         String failTable = failTableName(answerTable);
 
@@ -58,7 +60,7 @@ public class RuleExecutionPersistenceService {
 
         // Step 2: 写入数据（DML，TransactionTemplate 管理事务，DDL 在外部已执行完）
         return tx.execute(status -> doSaveData(request, answerTable, csvLoad, spssResult,
-                correctionCleanValues, cleanTable, failTable));
+                correctionCleanValues, varToQid, cleanTable, failTable));
     }
 
     private SaveSummary doSaveData(DbRuleExecutionDataLoader.Request request,
@@ -66,6 +68,7 @@ public class RuleExecutionPersistenceService {
                                    PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
                                    Map<String, Object> spssResult,
                                    Map<String, Map<String, String>> correctionCleanValues,
+                                   Map<String, Long> varToQid,
                                    String cleanTable, String failTable) {
         long cleanTaskId = System.currentTimeMillis();
 
@@ -78,7 +81,7 @@ public class RuleExecutionPersistenceService {
         clearPreviousResults(request, answerTable, cleanTable, failTable, cleanIds);
 
         int cleanRows = insertCleanRows(answerTable, cleanTable, cleanIds, cleanTaskId);
-        int correctionRows = updateCleanCorrections(request, cleanTable, csvLoad, correctionCleanValues);
+        int correctionRows = updateCleanCorrections(request, cleanTable, csvLoad, correctionCleanValues, varToQid);
         int failRows = insertFailRows(request, answerTable, failTable, failures, csvLoad, cleanTaskId);
 
         log.info("执行结果已保存: cleanTable={}, cleanRows={}, failRows={}, correctionRows={}",
@@ -220,39 +223,31 @@ public class RuleExecutionPersistenceService {
     private int updateCleanCorrections(DbRuleExecutionDataLoader.Request request,
                                        String cleanTable,
                                        PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
-                                       Map<String, Map<String, String>> correctionCleanValues) {
+                                       Map<String, Map<String, String>> correctionCleanValues,
+                                       Map<String, Long> varToQid) {
         if (csvLoad == null || correctionCleanValues == null || correctionCleanValues.isEmpty()) {
             return 0;
         }
-        Map<Long, String> questionVariables = loadQuestionVariables(request.scriptId);
+        // 构建反向映射: questionId → variableName
+        Map<Long, String> qidToVar = new LinkedHashMap<>();
+        for (Map.Entry<String, Long> e : varToQid.entrySet()) {
+            qidToVar.put(e.getValue(), e.getKey());
+        }
         int count = 0;
         for (AnswerRecord answer : csvLoad.getAnswers()) {
             if (answer == null || answer.getRawId() <= 0) continue;
             Map<String, String> rowCorrections = correctionCleanValues.get(answer.getSampleKey());
             if (rowCorrections == null || rowCorrections.isEmpty()) continue;
-            String variable = questionVariables.get(Long.valueOf(answer.getQuestionId()));
+            // 通过 questionId → variableName 反查纠偏值
+            String variable = qidToVar.get(answer.getQuestionId());
             if (variable == null) continue;
-            String corrected = rowCorrections.get(variable.trim().toUpperCase());
+            String corrected = rowCorrections.get(variable.toUpperCase());
             if (corrected == null) continue;
             count += jdbc.update("UPDATE " + cleanTable + " SET content=? WHERE source_id=?",
                     corrected, Long.valueOf(answer.getRawId()));
         }
+        log.info("纠偏值已写入_clean: 共{}条", count);
         return count;
-    }
-
-    private Map<Long, String> loadQuestionVariables(long scriptId) {
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT question_id, variable_name FROM sps_script_question_mapping WHERE script_id=?",
-                Long.valueOf(scriptId));
-        Map<Long, String> result = new LinkedHashMap<Long, String>();
-        for (Map<String, Object> row : rows) {
-            Long questionId = asLongObject(row.get("question_id"));
-            if (questionId == null) continue;
-            String variable = stringValue(row.get("variable_name"));
-            if (variable.isEmpty()) continue;
-            result.put(questionId, variable.trim().toUpperCase());
-        }
-        return result;
     }
 
     /**

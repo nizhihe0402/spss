@@ -52,9 +52,18 @@ public class ExecutionService {
                 try {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> spssResult = (Map<String, Object>) result.get("data");
+                    // 构建纠偏所需的 变量→questionId 映射（从执行时 mappings）
+                    @SuppressWarnings("unchecked")
+                    Map<String, Long> varToQid = (Map<String, Long>) result.getOrDefault(
+                        "_varToQid", Collections.emptyMap());
+                    @SuppressWarnings("unchecked")
+                    Map<String, Map<String, String>> correctionCleanValues =
+                        (Map<String, Map<String, String>>) result.getOrDefault(
+                            "_correctionCleanValues", Collections.emptyMap());
                     RuleExecutionPersistenceService.SaveSummary saveResult =
-                        persistenceService.saveDbExecutionResult(request, loaded.getAnswerTable(),
-                                loaded.getCsvLoad(), spssResult);
+                        persistenceService.saveDbExecutionResult(
+                                request, loaded.getAnswerTable(), loaded.getCsvLoad(),
+                                spssResult, correctionCleanValues, varToQid);
                     result.put("persist", saveResult.toMap());
                 } catch (Exception pe) {
                     log.error("保存执行结果到_clean/_fail失败", pe);
@@ -115,6 +124,9 @@ public class ExecutionService {
         Map<String, Object> spssResult = StudentSpssRuleResultBuilder.build(
                 rows, rules, answers, csvLoad.getStudentNamesByKey());
 
+        // 构建纠偏所需的 变量→questionId 映射（从运行时 mappings）
+        Map<String, Long> varToQid = buildVarToQidMap(mappings);
+
         result.put("code", 0);
         result.put("msg", "SPS 规则执行完成");
         result.put("scriptId", scriptId);
@@ -122,8 +134,24 @@ public class ExecutionService {
         result.put("data", spssResult);
         result.put("fieldValidation", fieldValidation);
         result.put("_correctionCleanValues", correctionResult.getCleanValues());
+        result.put("_varToQid", varToQid);
         if (extra != null) result.putAll(extra);
         return result;
+    }
+
+    /**
+     * 从运行时 QuestionMapping 构建 变量名→questionId 映射。
+     */
+    private Map<String, Long> buildVarToQidMap(Map<String, QuestionMapping> mappings) {
+        Map<String, Long> varToQid = new LinkedHashMap<>();
+        if (mappings != null) {
+            for (Map.Entry<String, QuestionMapping> e : mappings.entrySet()) {
+                if (e.getValue() != null && e.getValue().getQuestionId() > 0) {
+                    varToQid.put(e.getKey().trim().toUpperCase(), e.getValue().getQuestionId());
+                }
+            }
+        }
+        return varToQid;
     }
 
     private Map<String, QuestionMapping> loadMappings(byte[] mappingBytes, long scriptId) throws Exception {

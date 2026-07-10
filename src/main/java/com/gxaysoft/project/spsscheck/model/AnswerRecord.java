@@ -107,6 +107,14 @@ public class AnswerRecord {
         return delFlag == null || delFlag.trim().isEmpty() || "0".equals(delFlag.trim());
     }
 
+    /**
+     * 返回一个新的 AnswerRecord，content 替换为指定值，其余字段不变。
+     */
+    public AnswerRecord withContent(String newContent) {
+        return new AnswerRecord(rawId, rowNumber, sampleKey, questionId, optionId,
+                studentId, newContent, projectId, tableId, times, year, delFlag);
+    }
+
     private static long parseLongQuietly(String value) {
         if (value == null) return -1L;
         try {
