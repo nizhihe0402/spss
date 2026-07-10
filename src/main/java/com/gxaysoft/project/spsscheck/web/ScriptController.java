@@ -156,6 +156,7 @@ public class ScriptController {
         RuleCorrectionPlan correction = RuleCorrectionPlan.detect(rt.name(), rd.getTarget(), sources, rd.getDescription());
         String spssSource = rd.getSpssSource() != null ? rd.getSpssSource() : "";
         String javaPreview = rd.getJavaPreview() != null ? rd.getJavaPreview() : "";
+        String executionChain = rd.getExecutionChain() != null ? rd.getExecutionChain() : "";
 
         org.springframework.jdbc.support.KeyHolder keyHolder = new org.springframework.jdbc.support.GeneratedKeyHolder();
         jdbc.update(conn -> {
@@ -163,9 +164,9 @@ public class ScriptController {
                 "INSERT INTO sps_rule (script_id, rule_code, rule_name, rule_type, target_variable, " +
                 "source_variables, source_question_mappings, correction_enabled, correction_type, correction_variables, " +
                 "correction_source, correction_strategy, correction_apply_stage, correction_write_clean, " +
-                "correction_write_source, correction_description, spss_source, rule_json, java_preview, sort_no, " +
-                "affect_clean, warning_message, start_line, end_line) " +
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "correction_write_source, correction_description, spss_source, rule_json, java_preview, " +
+                "execution_chain, sort_no, affect_clean, warning_message, start_line, end_line) " +
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 java.sql.Statement.RETURN_GENERATED_KEYS);
             ps.setLong(1, scriptId); ps.setString(2, code); ps.setString(3, rd.getTarget());
             ps.setString(4, rt.name()); ps.setString(5, rd.getTarget()); ps.setString(6, sources);
@@ -176,12 +177,13 @@ public class ScriptController {
             ps.setInt(14, correction.writeClean ? 1 : 0); ps.setInt(15, correction.writeSource ? 1 : 0);
             ps.setString(16, correction.description); ps.setString(17, truncate(spssSource, 65535));
             ps.setString(18, "{\"v2\":true,\"type\":\"" + rt.name() + "\"}");
-            ps.setString(19, javaPreview); ps.setInt(20, sortNo);
-            ps.setInt(21, rt == RuleType.IDENTITY_CHECK || rt == RuleType.MISSING_CHECK
+            ps.setString(19, javaPreview); ps.setString(20, executionChain);
+            ps.setInt(21, sortNo);
+            ps.setInt(22, rt == RuleType.IDENTITY_CHECK || rt == RuleType.MISSING_CHECK
                     || rt == RuleType.RANGE_CHECK || rt == RuleType.CONSISTENCY_CHECK
                     || rt == RuleType.DOCUMENT_CHECK ? 1 : 0);
-            ps.setString(22, rd.getDescription());
-            ps.setInt(23, rd.getStartLine()); ps.setInt(24, rd.getEndLine());
+            ps.setString(23, rd.getDescription());
+            ps.setInt(24, rd.getStartLine()); ps.setInt(25, rd.getEndLine());
             return ps;
         }, keyHolder);
 

@@ -35,7 +35,8 @@ public class RuleController {
             "SELECT id, rule_code AS code, rule_name AS name, rule_type AS type, " +
             "target_variable AS target, source_variables AS sources, enabled, " +
             "source_question_mappings AS sourceQuestionMappings, " +
-            "spss_source AS spss, java_preview AS java, rule_json AS ruleJson, " +
+            "spss_source AS spss, java_preview AS java, execution_chain AS executionChain, " +
+            "rule_json AS ruleJson, " +
             "warning_message AS description, " +
             "correction_enabled AS correctionEnabled, correction_type AS correctionType, " +
             "correction_variables AS correctionVariables, correction_source AS correctionSource, " +

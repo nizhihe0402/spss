@@ -13,6 +13,7 @@ public class Rule {
     private String spssSource;
     private SegmentInfo segment;
     private String javaPreview;
+    private String executionChain;
     private List<String> sourceVariables;
 
     public Rule() {
@@ -47,6 +48,8 @@ public class Rule {
     public void setSegment(SegmentInfo segment) { this.segment = segment; }
     public String getJavaPreview() { return javaPreview; }
     public void setJavaPreview(String javaPreview) { this.javaPreview = javaPreview; }
+    public String getExecutionChain() { return executionChain; }
+    public void setExecutionChain(String executionChain) { this.executionChain = executionChain; }
     public List<String> getSourceVariables() { return sourceVariables; }
     public void setSourceVariables(List<String> sourceVariables) { this.sourceVariables = sourceVariables != null ? sourceVariables : new ArrayList<>(); }
 

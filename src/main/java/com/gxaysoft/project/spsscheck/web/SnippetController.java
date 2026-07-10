@@ -147,6 +147,7 @@ public class SnippetController {
                 m.put("sources", sources);
                 m.put("expression", r.getExpression());
                 m.put("javaPreview", r.getJavaPreview());
+                m.put("executionChain", r.getExecutionChain());
                 m.put("spssSource", truncate(r.getSpssSource() != null ? r.getSpssSource() : "", 500));
                 m.put("correctionEnabled", correction.enabled ? 1 : 0);
                 m.put("correctionDescription", correction.description);

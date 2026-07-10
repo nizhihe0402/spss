@@ -172,6 +172,10 @@ pre{margin:0}
   <div class="layui-card-header">Java 预览</div>
   <div class="layui-card-body"><pre id="javaPreview" style="white-space:pre-wrap;max-height:200px;overflow:auto;background:#f5f5f5;padding:10px;font-size:12px"></pre></div>
 </div>
+<div class="layui-card">
+  <div class="layui-card-header">完整执行链路</div>
+  <div class="layui-card-body"><pre id="executionChain" style="white-space:pre-wrap;max-height:500px;overflow:auto;background:#fff5f5;padding:10px;font-size:12px"></pre></div>
+</div>
 </script>
 
 <!-- ═══ Output Rules ═══ -->
@@ -634,6 +638,7 @@ function showDetail(){
     $('#stepList').html(html||'<span style="color:#999">无步骤(单一COMPUTE规则)</span>');
     $('#spssSource').text(res.spss||'');
     $('#javaPreview').text(res.java||'');
+    $('#executionChain').text(res.executionChain||'');
   });
 }
 
@@ -699,9 +704,13 @@ function previewSnippet(){
         if(r.spssSource){
           html += '<details style="margin-top:3px"><summary style="font-size:11px;color:#2B5E8E;cursor:pointer">SPSS源码</summary><pre style="font-size:11px;background:#f0f0f0;padding:4px;max-height:120px;overflow:auto">'+htmlEscape(r.spssSource)+'</pre></details>';
         }
+        // Execution chain (完整执行链路)
+        if(r.executionChain){
+          html += '<details style="margin-top:3px"><summary style="font-size:11px;color:#c00;cursor:pointer">完整执行链路</summary><pre style="font-size:11px;background:#fff5f5;padding:4px;max-height:300px;overflow:auto">'+htmlEscape(r.executionChain)+'</pre></details>';
+        }
         // Java preview
         if(r.javaPreview){
-          html += '<details style="margin-top:3px"><summary style="font-size:11px;color:#5FB878;cursor:pointer">Java预览</summary><pre style="font-size:11px;background:#f5fff5;padding:4px;max-height:80px;overflow:auto">'+htmlEscape(r.javaPreview)+'</pre></details>';
+          html += '<details style="margin-top:3px"><summary style="font-size:11px;color:#5FB878;cursor:pointer">Java预览</summary><pre style="font-size:11px;background:#f5fff5;padding:4px;max-height:120px;overflow:auto">'+htmlEscape(r.javaPreview)+'</pre></details>';
         }
         html += '</div>';
       });
