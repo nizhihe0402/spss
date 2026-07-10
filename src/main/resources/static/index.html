@@ -67,12 +67,14 @@ pre{margin:0}
 <script type="text/html" id="tplScripts">
 <div class="toolbar">
   <button class="layui-btn layui-btn-sm" onclick="loadScripts()"><i class="layui-icon layui-icon-refresh"></i> 刷新</button>
+  <button class="layui-btn layui-btn-sm layui-btn-normal" onclick="reparseAll()">全部重新解析</button>
 </div>
 <table id="scriptTable" lay-filter="scriptTable"></table>
 <script type="text/html" id="scriptBar">
   <a class="layui-btn layui-btn-xs layui-btn-normal" lay-event="rules">规则</a>
   <a class="layui-btn layui-btn-xs" lay-event="outputs">输出分组</a>
   <a class="layui-btn layui-btn-xs layui-btn-warm" lay-event="publish">{{d.status=='DRAFT'?'发布':'已发布'}}</a>
+  <a class="layui-btn layui-btn-xs" lay-event="reparse">重新解析</a>
   <a class="layui-btn layui-btn-xs layui-btn-danger" lay-event="del">删除</a>
 </script>
 </script>
@@ -357,6 +359,9 @@ layui.use(['table','element','upload','form','layer'], function(){
       var s = obj.data.status=='DRAFT'?'PUBLISHED':'DRAFT';
       $.ajax({url:'/api/scripts/'+currentScriptId+'/status?status='+s, method:'PUT', success:function(){loadScripts()}});
     }
+    if(obj.event=='reparse'){
+      reparseScript(currentScriptId, currentScriptName);
+    }
     if(obj.event=='del'){
       layer.confirm('确定删除脚本 '+obj.data.name+' 及其所有规则?', function(i){
         $.ajax({url:'/api/scripts/'+currentScriptId, method:'DELETE', success:function(){layer.close(i);loadScripts()}});
@@ -388,6 +393,53 @@ function showPage(page){
 }
 
 // ═══ Scripts ═══
+function reparseScript(scriptId, scriptName){
+  layer.confirm('确定重新解析脚本 '+(scriptName||'#'+scriptId)+'？将删除旧规则并重新生成。', function(i){
+    layer.close(i);
+    var idx = layer.load(1);
+    $.ajax({url:'/api/scripts/'+scriptId+'/reparse', method:'POST', success:function(res){
+      layer.close(idx);
+      if(res.code==0){
+        layer.msg(res.msg);
+        loadScripts();
+        if(currentScriptId==scriptId && typeof showRules==='function') showRules();
+      }else{
+        layer.msg(res.msg||'重新解析失败');
+      }
+    }, error:function(){
+      layer.close(idx);
+      layer.msg('请求失败');
+    }});
+  });
+}
+
+function reparseAll(){
+  layer.confirm('确定全部重新解析？将删除所有脚本的旧规则并重新生成，耗时较长。', function(i){
+    layer.close(i);
+    $.get('/api/scripts', function(scripts){
+      if(!scripts||!scripts.length){ layer.msg('没有脚本'); return; }
+      var total = scripts.length, done = 0, ok = 0, fail = 0;
+      var idx = layer.load(1);
+      function next(){
+        if(done >= total){
+          layer.close(idx);
+          layer.msg('全部重新解析完成: 成功 '+ok+'，失败 '+fail);
+          loadScripts();
+          return;
+        }
+        var s = scripts[done];
+        $.ajax({url:'/api/scripts/'+s.id+'/reparse', method:'POST', success:function(r){
+          if(r.code==0) ok++; else fail++;
+        }, error:function(){ fail++; }, complete:function(){
+          done++;
+          next();
+        }});
+      }
+      next();
+    });
+  });
+}
+
 function loadScripts(){
   $.get('/api/scripts', function(res){
     table.render({
