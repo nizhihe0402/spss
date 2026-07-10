@@ -21,6 +21,11 @@ public class AnswerDataValidator {
     }
 
     public AnswerDataValidationReport validate(PrototypeFileReaders.AnswerCsvLoadResult loadResult) {
+        return validate(loadResult, true);
+    }
+
+    public AnswerDataValidationReport validate(PrototypeFileReaders.AnswerCsvLoadResult loadResult,
+                                               boolean enforceTableIdConsistency) {
         AnswerDataValidationReport report = new AnswerDataValidationReport();
         if (loadResult == null) {
             report.addError("EMPTY_LOAD_RESULT", 0, null, null, null, null,
@@ -41,19 +46,21 @@ public class AnswerDataValidator {
             return report;
         }
 
-        basicFieldCheck(answers, report);
+        basicFieldCheck(answers, report, enforceTableIdConsistency);
         Map<Long, QuestionMeta> questionMeta = loadQuestionMeta(answers, report);
         Map<Long, List<OptionMeta>> optionsByQuestion = loadOptionsByQuestion(answers, report);
         Map<Long, OptionMeta> optionsById = flattenOptions(optionsByQuestion);
 
-        questionAndOptionCheck(answers, questionMeta, optionsByQuestion, optionsById, report);
+        questionAndOptionCheck(answers, questionMeta, optionsByQuestion, optionsById, report, enforceTableIdConsistency);
         duplicateCheck(answers, questionMeta, report);
         coverageCheck(answers, questionMeta, report);
 
         return report;
     }
 
-    private void basicFieldCheck(List<AnswerRecord> answers, AnswerDataValidationReport report) {
+    private void basicFieldCheck(List<AnswerRecord> answers,
+                                 AnswerDataValidationReport report,
+                                 boolean enforceTableIdConsistency) {
         Set<Long> tableIds = new TreeSet<>();
         Set<Long> projectIds = new TreeSet<>();
         Set<String> years = new TreeSet<>();
@@ -80,8 +87,9 @@ public class AnswerDataValidator {
                         "project_id 为空或不是有效数字", "建议补齐 project_id，用于区分不同项目数据");
             }
             if (a.getTableId() <= 0) {
-                report.addError("MISSING_TABLE_ID", a.getRowNumber(), a.getSampleKey(), nullableLong(a.getStudentId()),
-                        nullableLong(a.getQuestionId()), nullableLong(a.getOptionId()), "table_id", String.valueOf(a.getTableId()),
+                addTableIdIssue(report, enforceTableIdConsistency, "MISSING_TABLE_ID",
+                        a.getRowNumber(), a.getSampleKey(), nullableLong(a.getStudentId()),
+                        nullableLong(a.getQuestionId()), nullableLong(a.getOptionId()), String.valueOf(a.getTableId()),
                         "table_id 为空或不是有效数字", "补充正确 table_id，否则无法确定使用哪张表的问题字典");
             }
             if (a.getQuestionId() <= 0) {
@@ -109,7 +117,8 @@ public class AnswerDataValidator {
         report.getSummary().put("studentCount", students.size());
 
         if (tableIds.size() > 1) {
-            report.addError("MIXED_TABLE_ID", 0, null, null, null, null, "table_id", tableIds.toString(),
+            addTableIdIssue(report, enforceTableIdConsistency, "MIXED_TABLE_ID",
+                    0, null, null, null, null, tableIds.toString(),
                     "同一个 CSV 中存在多个 table_id，执行规则时只能稳定匹配一张表", "按 table_id 拆分后分别执行，或确认脚本是否支持混合表");
         }
         if (projectIds.size() > 1) {
@@ -193,7 +202,8 @@ public class AnswerDataValidator {
                                         Map<Long, QuestionMeta> questionMeta,
                                         Map<Long, List<OptionMeta>> optionsByQuestion,
                                         Map<Long, OptionMeta> optionsById,
-                                        AnswerDataValidationReport report) {
+                                        AnswerDataValidationReport report,
+                                        boolean enforceTableIdConsistency) {
         for (AnswerRecord a : answers) {
             QuestionMeta q = questionMeta.get(a.getQuestionId());
             if (q == null) {
@@ -208,8 +218,9 @@ public class AnswerDataValidator {
                         "question_id 对应问题已删除或无效", "不要上传已删除问题的数据，或恢复问题字典状态");
             }
             if (a.getTableId() > 0 && q.tableId > 0 && a.getTableId() != q.tableId) {
-                report.addError("QUESTION_TABLE_MISMATCH", a.getRowNumber(), a.getSampleKey(), nullableLong(a.getStudentId()),
-                        a.getQuestionId(), nullableLong(a.getOptionId()), "table_id", String.valueOf(a.getTableId()),
+                addTableIdIssue(report, enforceTableIdConsistency, "QUESTION_TABLE_MISMATCH",
+                        a.getRowNumber(), a.getSampleKey(), nullableLong(a.getStudentId()),
+                        a.getQuestionId(), nullableLong(a.getOptionId()), String.valueOf(a.getTableId()),
                         "数据行 table_id 与 bus_question.table_id 不一致，问题所属 table_id=" + q.tableId,
                         "按 question_id 所属表修正 table_id，或修正 question_id");
             }
@@ -244,8 +255,9 @@ public class AnswerDataValidator {
                         "按 option_id 所属问题修正 question_id，或重新选择正确 option_id");
             }
             if (a.getTableId() > 0 && option.tableId > 0 && option.tableId != a.getTableId()) {
-                report.addError("OPTION_TABLE_MISMATCH", a.getRowNumber(), a.getSampleKey(), nullableLong(a.getStudentId()),
-                        a.getQuestionId(), a.getOptionId(), "table_id", String.valueOf(a.getTableId()),
+                addTableIdIssue(report, enforceTableIdConsistency, "OPTION_TABLE_MISMATCH",
+                        a.getRowNumber(), a.getSampleKey(), nullableLong(a.getStudentId()),
+                        a.getQuestionId(), a.getOptionId(), String.valueOf(a.getTableId()),
                         "option_id 所属 table_id=" + option.tableId + "，与数据行 table_id 不一致",
                         "修正 table_id 或 option_id");
             }
@@ -293,6 +305,26 @@ public class AnswerDataValidator {
                         a.getQuestionId(), null, "question_id", String.valueOf(a.getQuestionId()),
                         "同一学生同一非多选题存在多条有效答案，答案数=" + list.size(), "确认是否为多选题；否则仅保留一条有效答案");
             }
+        }
+    }
+
+    private void addTableIdIssue(AnswerDataValidationReport report,
+                                 boolean asError,
+                                 String code,
+                                 int rowNumber,
+                                 String sampleKey,
+                                 Long studentId,
+                                 Long questionId,
+                                 Long optionId,
+                                 String actualValue,
+                                 String message,
+                                 String suggestion) {
+        if (asError) {
+            report.addError(code, rowNumber, sampleKey, studentId, questionId, optionId,
+                    "table_id", actualValue, message, suggestion);
+        } else {
+            report.addWarn(code, rowNumber, sampleKey, studentId, questionId, optionId,
+                    "table_id", actualValue, message, suggestion);
         }
     }
 

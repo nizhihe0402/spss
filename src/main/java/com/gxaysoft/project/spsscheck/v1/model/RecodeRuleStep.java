@@ -22,10 +22,14 @@ public class RecodeRuleStep implements RuleStep {
         Object value = row.get(source);
         for (RecodeCase recodeCase : cases) {
             if (recodeCase.matches(value)) {
-                row.put(target, recodeCase.toValue());
+                row.put(target, recodeCase.toValue(value));
                 return;
             }
         }
+    }
+
+    public List<RecodeCase> getCases() {
+        return cases;
     }
 
     @Override

@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import com.gxaysoft.project.spsscheck.v2.model.RuleType;
+import com.gxaysoft.project.spsscheck.persistence.SourceQuestionMappingSyncService;
 
 import java.util.*;
 
@@ -21,6 +22,12 @@ public class RuleControllerV2 {
         List<Map<String, Object>> rows = jdbc.queryForList(
             "SELECT id, rule_code AS code, rule_name AS name, rule_type AS type, " +
             "target_variable AS target, source_variables AS sources, " +
+            "source_question_mappings AS sourceQuestionMappings, " +
+            "correction_enabled AS correctionEnabled, correction_type AS correctionType, " +
+            "correction_variables AS correctionVariables, correction_source AS correctionSource, " +
+            "correction_strategy AS correctionStrategy, correction_apply_stage AS correctionApplyStage, " +
+            "correction_write_clean AS correctionWriteClean, correction_write_source AS correctionWriteSource, " +
+            "correction_description AS correctionDescription, " +
             "warning_message AS description, sort_no AS sort, " +
             "start_line AS startLine, end_line AS endLine, line_count AS lineCount, " +
             "segment_title AS segmentTitle, split_reason AS splitReason " +
@@ -34,6 +41,12 @@ public class RuleControllerV2 {
         Map<String, Object> rule = jdbc.queryForMap(
             "SELECT id, rule_code AS code, rule_name AS name, rule_type AS type, " +
             "target_variable AS target, source_variables AS sources, " +
+            "source_question_mappings AS sourceQuestionMappings, " +
+            "correction_enabled AS correctionEnabled, correction_type AS correctionType, " +
+            "correction_variables AS correctionVariables, correction_source AS correctionSource, " +
+            "correction_strategy AS correctionStrategy, correction_apply_stage AS correctionApplyStage, " +
+            "correction_write_clean AS correctionWriteClean, correction_write_source AS correctionWriteSource, " +
+            "correction_description AS correctionDescription, " +
             "spss_source AS spss, java_preview AS java, warning_message AS description, " +
             "start_line AS startLine, end_line AS endLine, line_count AS lineCount, " +
             "segment_title AS segmentTitle, split_reason AS splitReason " +
@@ -72,9 +85,31 @@ public class RuleControllerV2 {
 
     @PutMapping("/rules/{id}")
     public Map<String, Object> update(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        jdbc.update("UPDATE sps_rule SET rule_name=?, target_variable=?, source_variables=?, warning_message=? WHERE id=?",
-                body.get("name"), body.get("target"), body.get("sources"), body.get("description"), id);
+        String sources = body.get("sources");
+        String sourceQuestionMappings = new SourceQuestionMappingSyncService(jdbc).buildForSources(sources, null);
+        jdbc.update("UPDATE sps_rule SET rule_name=?, target_variable=?, source_variables=?, source_question_mappings=?, warning_message=? WHERE id=?",
+                body.get("name"), body.get("target"), sources, sourceQuestionMappings, body.get("description"), id);
         return Collections.singletonMap("code", 0);
+    }
+
+    @PutMapping("/rules/{id}/correction")
+    public Map<String, Object> updateCorrection(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        CorrectionUpdate update = CorrectionUpdate.from(body);
+        jdbc.update("UPDATE sps_rule SET correction_enabled=?, correction_type=?, correction_variables=?, " +
+                        "correction_source=?, correction_strategy=?, correction_apply_stage=?, " +
+                        "correction_write_clean=?, correction_write_source=?, correction_description=? WHERE id=?",
+                update.enabled, update.type, update.variables, update.source, update.strategy,
+                update.applyStage, update.writeClean, update.writeSource, update.description, id);
+        return Collections.singletonMap("code", 0);
+    }
+
+    @PostMapping("/rules/sync-source-question-mappings")
+    public Map<String, Object> syncSourceQuestionMappings(@RequestParam Long scriptId) {
+        int updated = new SourceQuestionMappingSyncService(jdbc).syncScript(scriptId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("code", 0);
+        result.put("updated", updated);
+        return result;
     }
 
     /** Re-generate java_preview for all rules in a script */
@@ -151,5 +186,68 @@ public class RuleControllerV2 {
 
     private String safeIdent(String s) {
         return s == null ? "var" : s.replaceAll("[^a-zA-Z0-9_]", "_").replaceAll("_+", "_");
+    }
+
+    public static class CorrectionUpdate {
+        public final int enabled;
+        public final String type;
+        public final String variables;
+        public final String source;
+        public final String strategy;
+        public final String applyStage;
+        public final int writeClean;
+        public final int writeSource;
+        public final String description;
+
+        private CorrectionUpdate(int enabled,
+                                 String type,
+                                 String variables,
+                                 String source,
+                                 String strategy,
+                                 String applyStage,
+                                 int writeClean,
+                                 int writeSource,
+                                 String description) {
+            this.enabled = enabled;
+            this.type = type;
+            this.variables = variables;
+            this.source = source;
+            this.strategy = strategy;
+            this.applyStage = applyStage;
+            this.writeClean = writeClean;
+            this.writeSource = writeSource;
+            this.description = description;
+        }
+
+        public static CorrectionUpdate from(Map<String, Object> body) {
+            Map<String, Object> values = body == null ? Collections.<String, Object>emptyMap() : body;
+            return new CorrectionUpdate(
+                    boolInt(value(values, "correctionEnabled", "correction_enabled")),
+                    text(value(values, "correctionType", "correction_type")),
+                    text(value(values, "correctionVariables", "correction_variables")),
+                    text(value(values, "correctionSource", "correction_source")),
+                    text(value(values, "correctionStrategy", "correction_strategy")),
+                    text(value(values, "correctionApplyStage", "correction_apply_stage")),
+                    boolInt(value(values, "correctionWriteClean", "correction_write_clean")),
+                    boolInt(value(values, "correctionWriteSource", "correction_write_source")),
+                    text(value(values, "correctionDescription", "correction_description")));
+        }
+
+        private static Object value(Map<String, Object> body, String camel, String snake) {
+            return body.containsKey(camel) ? body.get(camel) : body.get(snake);
+        }
+
+        private static String text(Object value) {
+            return value == null ? "" : String.valueOf(value).trim();
+        }
+
+        private static int boolInt(Object value) {
+            if (value == null) return 0;
+            if (value instanceof Number) return ((Number) value).intValue() == 0 ? 0 : 1;
+            if (value instanceof Boolean) return ((Boolean) value).booleanValue() ? 1 : 0;
+            String text = String.valueOf(value).trim();
+            return "1".equals(text) || "true".equalsIgnoreCase(text) || "yes".equalsIgnoreCase(text)
+                    || "on".equalsIgnoreCase(text) ? 1 : 0;
+        }
     }
 }

@@ -35,9 +35,15 @@ public class SpsRepository {
     // ── sps_rule ────────────────────────────────────────────────
 
     public void insertRule(long scriptId, int sortNo, SpssCheckRule rule) throws SQLException {
+        String sources = String.join(",", rule.getSourceVariables());
+        RuleCorrectionPlan correction = RuleCorrectionPlan.detect(
+                rule.isCheckRule() ? "ROW_CHECK" : "COMPUTE",
+                rule.getTarget(), sources, rule.getDescription());
         String sql = "INSERT INTO sps_rule (script_id, rule_code, rule_name, rule_type, target_variable, " +
-                "source_variables, spss_source, rule_json, java_preview, sort_no, affect_clean, warning_message) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "source_variables, correction_enabled, correction_type, correction_variables, correction_source, " +
+                "correction_strategy, correction_apply_stage, correction_write_clean, correction_write_source, " +
+                "correction_description, spss_source, rule_json, java_preview, sort_no, affect_clean, warning_message) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             String ruleCode = String.format("R%03d", sortNo);
             ps.setLong(1, scriptId);
@@ -45,14 +51,23 @@ public class SpsRepository {
             ps.setString(3, rule.getLabel());
             ps.setString(4, rule.isCheckRule() ? "ROW_CHECK" : "COMPUTE");
             ps.setString(5, rule.getTarget());
-            ps.setString(6, String.join(",", rule.getSourceVariables()));
-            ps.setString(7, rule.getSpssSource().length() > 65535
+            ps.setString(6, sources);
+            ps.setInt(7, correction.enabled ? 1 : 0);
+            ps.setString(8, correction.type);
+            ps.setString(9, correction.variables);
+            ps.setString(10, correction.source);
+            ps.setString(11, correction.strategy);
+            ps.setString(12, correction.applyStage);
+            ps.setInt(13, correction.writeClean ? 1 : 0);
+            ps.setInt(14, correction.writeSource ? 1 : 0);
+            ps.setString(15, correction.description);
+            ps.setString(16, rule.getSpssSource().length() > 65535
                     ? rule.getSpssSource().substring(0, 65535) : rule.getSpssSource());
-            ps.setString(8, buildRuleJson(rule));
-            ps.setString(9, rule.getJavaRule());
-            ps.setInt(10, sortNo);
-            ps.setInt(11, rule.isCheckRule() ? 1 : 0);
-            ps.setString(12, rule.getDescription());
+            ps.setString(17, buildRuleJson(rule));
+            ps.setString(18, rule.getJavaRule());
+            ps.setInt(19, sortNo);
+            ps.setInt(20, rule.isCheckRule() ? 1 : 0);
+            ps.setString(21, rule.getDescription());
             ps.executeUpdate();
 
             try (ResultSet rs = ps.getGeneratedKeys()) {
@@ -60,6 +75,31 @@ public class SpsRepository {
                 long ruleId = rs.getLong(1);
                 insertRuleSteps(ruleId, rule);
             }
+        }
+    }
+
+    public void insertScriptQuestionMappings(long scriptId, List<QuestionMapping> mappings) throws SQLException {
+        if (mappings == null || mappings.isEmpty()) {
+            return;
+        }
+        String sql = "INSERT INTO sps_script_question_mapping " +
+                "(script_id, variable_name, question_id, question_content, source_table_id, export_content, sort_no) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            int sortNo = 0;
+            for (QuestionMapping mapping : mappings) {
+                if (mapping == null || mapping.getQuestionId() <= 0) continue;
+                sortNo++;
+                ps.setLong(1, scriptId);
+                ps.setString(2, mapping.getVariableNameOriginal());
+                ps.setLong(3, mapping.getQuestionId());
+                ps.setString(4, mapping.getContent());
+                ps.setLong(5, mapping.getTableId());
+                ps.setString(6, mapping.getVariableNameOriginal());
+                ps.setInt(7, sortNo);
+                ps.addBatch();
+            }
+            ps.executeBatch();
         }
     }
 

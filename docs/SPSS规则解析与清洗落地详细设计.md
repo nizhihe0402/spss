@@ -242,7 +242,8 @@ ID1, PROVINCE, CITY, COUNTY, POINT, A121, A122, A123 ...
 因此执行前需要：
 
 ```text
-bus_question.export_content / export_sort → SPSS变量名
+bus_question.export_content → SPSS变量名
+bus_question.export_sort → 导出顺序，不参与规则执行变量映射
 answer.question_id → 变量名
 sample_key → 一行 RowContext
 ```

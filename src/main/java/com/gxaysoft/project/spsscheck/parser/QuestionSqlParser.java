@@ -70,7 +70,7 @@ public final class QuestionSqlParser {
                 continue;
             }
             long questionId = parseLong(byColumn.get("question_id"), -1L);
-            String variable = firstVariableLike(byColumn.get("export_sort"), byColumn.get("export_content"));
+            String variable = QuestionVariableNameSelector.variableNameFromExportContent(byColumn.get("export_content"));
             if (questionId < 0 || variable == null) {
                 continue;
             }
@@ -79,24 +79,6 @@ public final class QuestionSqlParser {
                 mappings.put(normalized, new QuestionMapping(questionId, variable, byColumn.get("content"), tableId));
             }
         }
-    }
-
-    private static String firstVariableLike(String exportSort, String exportContent) {
-        if (looksLikeSpssVariable(exportSort)) {
-            return exportSort;
-        }
-        if (looksLikeSpssVariable(exportContent)) {
-            return exportContent;
-        }
-        return null;
-    }
-
-    private static boolean looksLikeSpssVariable(String value) {
-        if (value == null) {
-            return false;
-        }
-        String trimmed = value.trim();
-        return trimmed.matches("[A-Za-z][A-Za-z0-9_]*");
     }
 
     private static int indexOfIgnoreCase(String text, String needle, int fromIndex) {

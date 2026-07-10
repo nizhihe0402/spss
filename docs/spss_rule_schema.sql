@@ -16,6 +16,21 @@ CREATE TABLE sps_script (
     updated_time    DATETIME
 );
 
+CREATE TABLE sps_script_question_mapping (
+    id                  BIGINT PRIMARY KEY,
+    script_id            BIGINT NOT NULL,
+    variable_name        VARCHAR(100) NOT NULL,
+    question_id          BIGINT NOT NULL,
+    question_content     VARCHAR(1000),
+    source_table_id      BIGINT,
+    export_content       VARCHAR(300),
+    sort_no              INT,
+    created_time         DATETIME,
+    INDEX idx_sps_script_question_script (script_id),
+    INDEX idx_sps_script_question_question (question_id),
+    INDEX idx_sps_script_question_variable (variable_name)
+);
+
 CREATE TABLE sps_rule_version (
     id              BIGINT PRIMARY KEY,
     script_id        BIGINT NOT NULL,
@@ -41,6 +56,16 @@ CREATE TABLE sps_rule (
     editable             TINYINT DEFAULT 1,
     target_variable      VARCHAR(100),
     source_variables     VARCHAR(1000),
+    source_question_mappings TEXT,
+    correction_enabled   TINYINT DEFAULT 0,
+    correction_type      VARCHAR(100),
+    correction_variables VARCHAR(500),
+    correction_source    VARCHAR(500),
+    correction_strategy  VARCHAR(1000),
+    correction_apply_stage VARCHAR(100),
+    correction_write_clean TINYINT DEFAULT 0,
+    correction_write_source TINYINT DEFAULT 0,
+    correction_description TEXT,
     depend_variables     VARCHAR(1000),
     generated_variables  VARCHAR(1000),
     action_type          VARCHAR(50),

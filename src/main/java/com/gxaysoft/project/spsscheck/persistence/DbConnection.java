@@ -5,7 +5,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public class DbConnection {
-    private static final String URL = "jdbc:mysql://localhost:3306/healthdetection_2025?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai";
+    private static final String URL = "jdbc:mysql://localhost:3306/h2025?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai";
     private static final String USER = "root";
     private static final String PASS = "123456";
 

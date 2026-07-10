@@ -32,6 +32,11 @@ body{margin:0;font-size:14px}
 .step-card.RECODE{border-left-color:#FF5722}
 .step-card.IF_ASSIGN{border-left-color:#2B5E8E}
 .toolbar{padding:8px 0}
+.student-rule-result-table .layui-table-cell{height:auto;line-height:22px;white-space:normal;overflow:visible;text-overflow:clip}
+.student-rule-result-table td{vertical-align:top}
+.student-rule-lines{white-space:pre-line;line-height:22px;padding:4px 0}
+.rule-source-question-table .layui-table-cell{height:auto;line-height:20px;white-space:normal;overflow:visible;text-overflow:clip}
+.rule-source-question-lines{white-space:pre-line;line-height:20px;padding:3px 0}
 pre{margin:0}
 </style>
 </head>
@@ -90,12 +95,14 @@ pre{margin:0}
 <script type="text/html" id="tplRules">
 <div class="toolbar">
   <button class="layui-btn layui-btn-sm layui-btn-primary" onclick="showPage('scripts')">← 返回</button>
+  <button class="layui-btn layui-btn-sm" onclick="syncSourceQuestionMappings()">同步question_id</button>
   <span style="margin-left:10px;font-size:16px;font-weight:bold" id="scriptTitle"></span>
 </div>
 <table id="ruleTable" lay-filter="ruleTable"></table>
 <script type="text/html" id="ruleBar">
   <a class="layui-btn layui-btn-xs layui-btn-normal" lay-event="detail">详情</a>
-  <a class="layui-btn layui-btn-xs" lay-event="edit">编辑</a>
+  <a class="layui-btn layui-btn-xs" lay-event="editRule">规则编辑</a>
+  <a class="layui-btn layui-btn-xs layui-btn-warm" lay-event="editCorrection">纠偏编辑</a>
 </script>
 </script>
 
@@ -181,7 +188,7 @@ RECODE BMI (SYSMIS=1)(ELSE=0) INTO BMI异常或缺失."></textarea>
   <div class="layui-col-md6" style="padding-right:10px">
     <div class="layui-card">
       <div class="layui-card-header">执行规则</div>
-      <div class="layui-card-body">
+      <div class="layui-card-body layui-form" lay-filter="runForm">
         <div class="layui-form-item">
           <label class="layui-form-label" style="width:80px">选择脚本</label>
           <div class="layui-input-block" style="margin-left:110px">
@@ -189,10 +196,53 @@ RECODE BMI (SYSMIS=1)(ELSE=0) INTO BMI异常或缺失."></textarea>
           </div>
         </div>
         <div class="layui-form-item">
-          <label class="layui-form-label" style="width:80px">CSV数据</label>
+          <label class="layui-form-label" style="width:80px">项目/年份</label>
+          <div class="layui-input-inline" style="width:150px">
+            <input id="runProjectId" class="layui-input" value="2" placeholder="projectId">
+          </div>
+          <div class="layui-input-inline" style="width:120px">
+            <input id="runYear" class="layui-input" value="2025" placeholder="year">
+          </div>
+        </div>
+        <div class="layui-form-item">
+          <label class="layui-form-label" style="width:80px">表/来源</label>
+          <div class="layui-input-inline" style="width:150px">
+            <select id="runTableId" lay-filter="runTableId">
+              <option value="">-- 选择表 --</option>
+              <option value="1">表1-1</option>
+              <option value="2">表1-2</option>
+              <option value="10">表1-3</option>
+              <option value="3">表2-1</option>
+              <option value="4">表2-2</option>
+              <option value="5">表2-3</option>
+              <option value="6">表3-1</option>
+              <option value="7">表3-2</option>
+              <option value="8">表3-3</option>
+            </select>
+          </div>
+          <div class="layui-input-inline" style="width:150px">
+            <select id="runSource">
+              <option value="normal">普通数据</option>
+              <option value="intervene">干预数据</option>
+            </select>
+          </div>
+        </div>
+        <div class="layui-form-item">
+          <label class="layui-form-label" style="width:80px">地区</label>
+          <div class="layui-input-inline" style="width:120px">
+            <select id="runProvinceId" lay-filter="runProvinceId" lay-search><option value="">省</option></select>
+          </div>
+          <div class="layui-input-inline" style="width:120px">
+            <select id="runCityId" lay-filter="runCityId" lay-search><option value="">市</option></select>
+          </div>
+          <div class="layui-input-inline" style="width:120px">
+            <select id="runDivisionId" lay-filter="runDivisionId" lay-search><option value="">区县</option></select>
+          </div>
+        </div>
+        <div class="layui-form-item" id="runSchoolRow">
+          <label class="layui-form-label" style="width:80px">学校</label>
           <div class="layui-input-block" style="margin-left:110px">
-            <button class="layui-btn layui-btn-sm" id="runCsvBtn"><i class="layui-icon layui-icon-upload"></i> 选择CSV</button>
-            <span id="runCsvName" style="margin-left:8px;color:#999">未选择</span>
+            <select id="runSchoolId" lay-search><option value="">-- 请选择学校 --</option></select>
           </div>
         </div>
         <div class="layui-form-item">
@@ -281,6 +331,8 @@ layui.use(['table','element','upload','form','layer'], function(){
     currentRuleId = obj.data.id;
     if(obj.event=='detail') showDetail();
     if(obj.event=='edit') showEditForm(obj.data);
+    if(obj.event=='editRule') showRuleEditForm(obj.data);
+    if(obj.event=='editCorrection') showCorrectionEditForm(obj.data);
   });
 
 });
@@ -290,6 +342,7 @@ function showPage(page){
   var tplMap = {scripts:'tplScripts',upload:'tplUpload',rules:'tplRules',detail:'tplDetail',outputs:'tplOutputs',snippet:'tplSnippet',run:'tplRun'};
   $('#mainContent').html($('#'+tplMap[page]).html());
   if(element) element.render();
+  if(form) form.render();
   if(page=='scripts') loadScripts();
   if(page=='upload') setTimeout(initUpload,200);
   if(page=='snippet') initSnippet();
@@ -342,17 +395,39 @@ function showRules(){
     table.render({
       elem:'#ruleTable', data:res, page:false, height:'full-80',
       cols:[[
+        {field:'correctionEnabled',title:'纠偏',width:80,templet:function(d){return correctionEnabledCell(d);}},
+        {field:'correctionType',title:'纠偏类型',width:150,templet:function(d){return htmlEscape(d.correctionType||'')}},
+        {field:'correctionVariables',title:'纠偏变量',width:150,templet:function(d){return htmlEscape(d.correctionVariables||'')}},
+        {field:'correctionStrategy',title:'纠偏策略',width:260,templet:function(d){return htmlEscape(d.correctionStrategy||'')}},
         {field:'sort',title:'#',width:50},
         {field:'code',title:'编号',width:80},
         {field:'type',title:'类型',width:130,templet:function(d){return '<span class="tag '+d.type+'">'+d.type+'</span>'}},
         {field:'typeLabel',title:'中文描述类型',width:110,templet:function(d){return htmlEscape(d.typeLabel || typeLabel(d.type));}},
         {field:'target',title:'目标变量',width:120,templet:function(d){return htmlEscape(d.target||'')}},
         {field:'sources',title:'源变量',width:180,templet:function(d){return sourceCell(d.sources);}},
+        {field:'sourceQuestionMappings',title:'源变量-question_id',width:220,templet:function(d){return questionMappingCell(d.sourceQuestionMappings);}},
         {field:'startLine',title:'起止行',width:105,templet:function(d){return lineRangeCell(d);}},
         {field:'description',title:'规则说明',width:300,templet:function(d){return htmlEscape(d.description||'')}},
-        {title:'操作',width:80,templet:'#ruleBar'}
-      ]]
+        {title:'操作',width:220,templet:'#ruleBar'}
+      ]],
+      done:function(){
+        $('#ruleTable').next('.layui-table-view').addClass('rule-source-question-table');
+      }
     });
+  });
+}
+
+function syncSourceQuestionMappings(){
+  if(!currentScriptId){ layer.msg('请选择脚本'); return; }
+  $.post(RULE_API+'/sync-source-question-mappings?scriptId='+currentScriptId, function(res){
+    if(res && res.code===0){
+      layer.msg('已同步 '+(res.updated || 0)+' 条规则');
+      showRules();
+    }else{
+      layer.msg((res && res.msg) || '同步失败');
+    }
+  }).fail(function(xhr){
+    layer.msg('同步失败: '+xhr.status);
   });
 }
 
@@ -365,6 +440,16 @@ function showDetail(){
       '<b>中文类型:</b> '+htmlEscape(res.typeLabel || typeLabel(res.type))+'  '+
       '<b>行号:</b> '+lineRangeCell(res)+'</div>'+
       '<div style="margin-top:6px"><b>目标:</b> '+htmlEscape(res.target||'')+'  <b>源变量:</b> '+sourceCell(res.sources)+'</div>'+
+      '<div style="margin-top:6px"><b>源变量-question_id:</b><div class="rule-source-question-lines">'+htmlEscape(res.sourceQuestionMappings||'')+'</div></div>'+
+      '<div style="margin-top:6px"><b>纠偏:</b> '+correctionEnabledText(res)+'  '+
+      '<b>类型:</b> '+htmlEscape(res.correctionType||'')+'  '+
+      '<b>变量:</b> '+htmlEscape(res.correctionVariables||'')+'</div>'+
+      '<div style="margin-top:6px"><b>来源:</b> '+htmlEscape(res.correctionSource||'')+'  '+
+      '<b>阶段:</b> '+htmlEscape(res.correctionApplyStage||'')+'  '+
+      '<b>写clean:</b> '+htmlEscape(String(res.correctionWriteClean || 0))+'  '+
+      '<b>写原始表:</b> '+htmlEscape(String(res.correctionWriteSource || 0))+'</div>'+
+      '<div style="margin-top:6px"><b>策略:</b> '+htmlEscape(res.correctionStrategy||'')+'</div>'+
+      '<div style="margin-top:6px"><b>说明:</b> '+htmlEscape(res.correctionDescription||'')+'</div>'+
       '<div style="margin-top:8px;color:#666">'+htmlEscape(res.description||'')+'</div>'
     );
     var steps = res.steps||[];
@@ -452,6 +537,10 @@ function saveSnippet(){
 }
 
 // ═══ Edit Rule ═══
+function showRuleEditForm(data){
+  showEditForm(data);
+}
+
 function showEditForm(data){
   $.get(RULE_API+'/'+data.id, function(res){
     layer.open({
@@ -486,8 +575,57 @@ function showEditForm(data){
   });
 }
 
+function showCorrectionEditForm(data){
+  $.get(RULE_API+'/'+data.id, function(res){
+    layer.open({
+      type:1, title:'纠偏编辑 - '+res.code, area:['760px','620px'],
+      content:'<form class="layui-form" lay-filter="correctionEditForm" style="padding:20px">'+
+        '<div class="layui-form-item"><label class="layui-form-label">启用纠偏</label><div class="layui-input-block">'+
+        '<input type="checkbox" name="correctionEnabled" lay-skin="primary" title="启用" '+checkedAttr(res.correctionEnabled)+'></div></div>'+
+        '<div class="layui-form-item"><label class="layui-form-label">纠偏类型</label><div class="layui-input-block">'+
+        '<select name="correctionType">'+
+        correctionOption('', '不纠偏', res.correctionType)+
+        correctionOption('FILL_SCHOOL_CODE', 'FILL_SCHOOL_CODE - 学校编码补齐', res.correctionType)+
+        correctionOption('FILL_DOCUMENT_INFO', 'FILL_DOCUMENT_INFO - 证件信息补齐', res.correctionType)+
+        correctionOption('NORMALIZE_REGION_CODE', 'NORMALIZE_REGION_CODE - 省市区编码纠偏', res.correctionType)+
+        '</select></div></div>'+
+        '<div class="layui-form-item"><label class="layui-form-label">纠偏变量</label><div class="layui-input-block">'+
+        '<input name="correctionVariables" class="layui-input" value="'+htmlAttr(res.correctionVariables||'')+'"></div></div>'+
+        '<div class="layui-form-item"><label class="layui-form-label">纠偏来源</label><div class="layui-input-block">'+
+        '<input name="correctionSource" class="layui-input" value="'+htmlAttr(res.correctionSource||'')+'"></div></div>'+
+        '<div class="layui-form-item"><label class="layui-form-label">应用阶段</label><div class="layui-input-block">'+
+        '<input name="correctionApplyStage" class="layui-input" value="'+htmlAttr(res.correctionApplyStage||'BEFORE_RULE_EXECUTION')+'"></div></div>'+
+        '<div class="layui-form-item"><label class="layui-form-label">写入位置</label><div class="layui-input-block">'+
+        '<input type="checkbox" name="correctionWriteClean" lay-skin="primary" title="写入_clean" '+checkedAttr(res.correctionWriteClean)+'>'+
+        '<input type="checkbox" name="correctionWriteSource" lay-skin="primary" title="写回原始表" '+checkedAttr(res.correctionWriteSource)+'></div></div>'+
+        '<div class="layui-form-item"><label class="layui-form-label">纠偏策略</label><div class="layui-input-block">'+
+        '<textarea name="correctionStrategy" class="layui-textarea" rows="3">'+htmlEscape(res.correctionStrategy||'')+'</textarea></div></div>'+
+        '<div class="layui-form-item"><label class="layui-form-label">纠偏说明</label><div class="layui-input-block">'+
+        '<textarea name="correctionDescription" class="layui-textarea" rows="4">'+htmlEscape(res.correctionDescription||'')+'</textarea></div></div>'+
+        '<div class="layui-form-item"><div class="layui-input-block">'+
+        '<button class="layui-btn" lay-submit lay-filter="correctionEditSave">保存纠偏设置</button></div></div>'+
+        '</form>',
+      success:function(){
+        form.render();
+        form.on('submit(correctionEditSave)', function(fdata){
+          var d = fdata.field;
+          d.correctionEnabled = d.correctionEnabled ? 1 : 0;
+          d.correctionWriteClean = d.correctionWriteClean ? 1 : 0;
+          d.correctionWriteSource = d.correctionWriteSource ? 1 : 0;
+          $.ajax({url:RULE_API+'/'+data.id+'/correction', method:'PUT', contentType:'application/json',
+            data:JSON.stringify(d), success:function(r){
+              if(r.code==0){ layer.closeAll(); showRules(); }
+              else layer.msg(r.msg || '保存失败');
+          }});
+          return false;
+        });
+      }
+    });
+  });
+}
+
 // ═══ Run Rules ═══
-var runCsvFile, runMapFile, runStuFile;
+var runMapFile, runStuFile;
 
 function bindRunFileUpload(elem, exts, labelSelector, setter){
   upload.render({
@@ -511,30 +649,67 @@ function initRun(){
     var html = '<option value="">-- 请选择 --</option>';
     res.forEach(function(s){ html += '<option value="'+s.id+'">#'+s.id+' '+htmlEscape(s.name)+'</option>'; });
     $('#runScriptId').html(html);
-    element.render('select');
+    form.render('select');
   });
-  // File selection only: submit with our own FormData below.
-  // 文件只选择，不自动上传；真实 File 通过 preview 回调取得。
-  bindRunFileUpload('#runCsvBtn', 'csv', '#runCsvName', function(file){ runCsvFile = file; });
+  loadRegionOptions(null, '#runProvinceId', '省');
+
+  $('#runProvinceId').off('change').on('change', function(){
+    onRunProvinceChanged($(this).val());
+  });
+  $('#runCityId').off('change').on('change', function(){
+    onRunCityChanged($(this).val());
+  });
+  $('#runDivisionId').off('change').on('change', function(){
+    loadRunSchools();
+  });
+  $('#runTableId').off('change').on('change', function(){
+    updateRunSchoolVisibility();
+    loadRunSchools();
+  });
+  form.on('select(runProvinceId)', function(data){
+    onRunProvinceChanged(data.value);
+  });
+  form.on('select(runCityId)', function(data){
+    onRunCityChanged(data.value);
+  });
+  form.on('select(runDivisionId)', function(data){
+    loadRunSchools();
+  });
+  form.on('select(runTableId)', function(){
+    updateRunSchoolVisibility();
+    loadRunSchools();
+  });
+  updateRunSchoolVisibility();
   bindRunFileUpload('#runMapBtn', 'json|sql', '#runMapName', function(file){ runMapFile = file; });
   bindRunFileUpload('#runStuBtn', 'json', '#runStuName', function(file){ runStuFile = file; });
+
   $('#runExecuteBtn').off('click').click(function(){
     var scriptId = $('#runScriptId').val();
+    var projectId = $('#runProjectId').val();
+    var year = $('#runYear').val();
+    var tableId = $('#runTableId').val();
+    var divisionId = $('#runDivisionId').val();
+    var schoolId = $('#runSchoolId').val();
     if(!scriptId){ layer.msg('请选择脚本'); return; }
-    if(!runCsvFile){ layer.msg('请选择CSV数据文件'); return; }
-    if(!(runCsvFile instanceof File)){
-      layer.msg('CSV文件对象异常，请重新选择CSV');
-      return;
-    }
+    if(!projectId){ layer.msg('请输入projectId'); return; }
+    if(!year){ layer.msg('请输入年份'); return; }
+    if(!tableId){ layer.msg('请选择表'); return; }
+    if(!divisionId){ layer.msg('请选择区县'); return; }
+    if(needsRunSchool(tableId) && !schoolId){ layer.msg('表2/表3执行必须选择学校'); return; }
     $('#runStatus').html('<span style="color:#999">执行中...</span>');
     var fd = new FormData();
-    fd.append('file', runCsvFile, runCsvFile.name);
     fd.append('scriptId', scriptId);
+    fd.append('projectId', projectId);
+    fd.append('year', year);
+    fd.append('tableId', tableId);
+    fd.append('divisionId', divisionId);
+    fd.append('source', $('#runSource').val() || 'normal');
+    if(needsRunSchool(tableId)) fd.append('schoolId', schoolId);
     if(runMapFile){ fd.append('mapping', runMapFile, runMapFile.name); fd.append('mappingFile', runMapFile, runMapFile.name); }
     if(runStuFile){ fd.append('student', runStuFile, runStuFile.name); fd.append('studentFile', runStuFile, runStuFile.name); }
     var strictValidate = $('#strictValidate').is(':checked');
     fd.append('strictValidate', strictValidate);
-    $.ajax({url:'/api/v2/rules/execute', method:'POST', data:fd, processData:false, contentType:false,
+    $.ajax({url:'/api/v2/rules/execute-db', method:'POST', data:fd, processData:false, contentType:false,
       success:function(res){
         renderStudentSplitResult(res.data || res.splitResult || buildSplitFromValidationReport(res.validationReport));
         if(res.code!=0){
@@ -542,13 +717,14 @@ function initRun(){
           return;
         }
         var data = res.data || res.splitResult || {};
-        if(data.students){
-          $('#runSummary').text('(学生数 '+htmlEscape(data.studentCount || 0)+'，规则数 '+htmlEscape(data.ruleCount || 0)+'，存在未通过学生 '+htmlEscape(data.failedStudentCount || 0)+')');
-        }
         $('#runStatus').html('<span style="color:green">完成</span>');
-        $('#runSummary').text('(学生数 '+htmlEscape(data.studentCount || 0)+'，通过 '+htmlEscape(data.passedCount || 0)+'，未通过 '+htmlEscape(data.failedCount || 0)+')');
+        var meta = res.executionSource === 'db'
+          ? '，来源 '+htmlEscape(res.answerTable || '')+'，答案 '+htmlEscape(res.answerCount || 0)
+          : '';
         if(data.students){
-          $('#runSummary').text('(学生数 '+htmlEscape(data.studentCount || 0)+'，规则数 '+htmlEscape(data.ruleCount || 0)+'，存在未通过学生 '+htmlEscape(data.failedStudentCount || 0)+')');
+          $('#runSummary').text('(学生数 '+htmlEscape(data.studentCount || 0)+'，规则数 '+htmlEscape(data.ruleCount || 0)+'，存在未通过学生 '+htmlEscape(data.failedStudentCount || 0)+meta+')');
+        } else {
+          $('#runSummary').text('(学生数 '+htmlEscape(data.studentCount || 0)+'，通过 '+htmlEscape(data.passedCount || 0)+'，未通过 '+htmlEscape(data.failedCount || 0)+meta+')');
         }
         $('#runErrorDetail').html('');
       },
@@ -561,81 +737,60 @@ function initRun(){
   });
 }
 
+function onRunProvinceChanged(value){
+  $('#runCityId').html('<option value="">市</option>');
+  $('#runDivisionId').html('<option value="">区县</option>');
+  $('#runSchoolId').html('<option value="">-- 请选择学校 --</option>');
+  if(value) loadRegionOptions(value, '#runCityId', '市');
+  form.render('select');
+}
 
-function renderStudentSplitResult(data){
-  data = data || {};
-  var passedList = data.passedList || [];
-  var failedList = data.failedList || [];
-  $('#studentSplitSummary').show().html(
-    '<b>学生级校验结果</b>：总行数 '+htmlEscape(data.totalRows || 0)+
-    '，学生数 '+htmlEscape(data.studentCount || (passedList.length + failedList.length))+
-    '，通过 <span style="color:#009688;font-weight:bold">'+htmlEscape(data.passedCount || passedList.length)+'</span>'+
-    '，未通过 <span style="color:#c00;font-weight:bold">'+htmlEscape(data.failedCount || failedList.length)+'</span>'+
-    '，违规项 '+htmlEscape(data.violationCount || 0)
-  );
+function onRunCityChanged(value){
+  $('#runDivisionId').html('<option value="">区县</option>');
+  $('#runSchoolId').html('<option value="">-- 请选择学校 --</option>');
+  if(value) loadRegionOptions(value, '#runDivisionId', '区县');
+  form.render('select');
+}
 
-  $('#passedStudentPanel').show();
-  $('#failedStudentPanel').show();
-
-  table.render({
-    elem:'#passedStudentTable',
-    data:passedList,
-    page:true,
-    limit:20,
-    limits:[20,50,100,200],
-    text:{none:'暂无通过学生'},
-    cols:[[
-      {field:'studentId',title:'学生ID',width:150,templet:function(d){return htmlEscape(d.studentId || d.studentKey || '');}},
-      {field:'studentName',title:'姓名',minWidth:120,templet:function(d){return htmlEscape(d.studentName || '');}}
-    ]]
-  });
-
-  var failedRows = [];
-  failedList.forEach(function(stu){
-    var violations = stu.violations || [];
-    if(violations.length===0){
-      failedRows.push({studentId:stu.studentId, studentKey:stu.studentKey, studentName:stu.studentName, ruleName:'', ruleCode:'', message:'', lineNo:'', fieldName:'', questionId:'', optionId:''});
-      return;
-    }
-    violations.forEach(function(v){
-      failedRows.push({
-        studentId:stu.studentId,
-        studentKey:stu.studentKey,
-        studentName:stu.studentName,
-        level:v.level || '',
-        ruleCode:v.ruleCode || v.code || '',
-        ruleName:v.ruleName || v.ruleCode || v.code || '',
-        message:v.message || '',
-        suggestion:v.suggestion || '',
-        lineNo:v.lineNo || v.rowNo || '',
-        fieldName:v.fieldName || '',
-        questionId:v.questionId || '',
-        optionId:v.optionId || '',
-        fieldValue:v.fieldValue || ''
-      });
+function loadRegionOptions(parentId, selector, label){
+  var url = '/api/v2/regions/children' + (parentId ? ('?parentId='+encodeURIComponent(parentId)) : '');
+  $.get(url, function(res){
+    var html = '<option value="">'+label+'</option>';
+    (res.data || []).forEach(function(r){
+      html += '<option value="'+htmlEscape(r.id)+'">'+htmlEscape(r.name || r.divisionName || r.id)+'</option>';
     });
-  });
-
-  table.render({
-    elem:'#failedStudentTable',
-    data:failedRows,
-    page:true,
-    limit:20,
-    limits:[20,50,100,200],
-    text:{none:'暂无未通过学生'},
-    cols:[[
-      {field:'studentId',title:'学生ID',width:150,templet:function(d){return htmlEscape(d.studentId || d.studentKey || '');}},
-      {field:'studentName',title:'姓名',width:120,templet:function(d){return htmlEscape(d.studentName || '');}},
-      {field:'level',title:'级别',width:85,templet:function(d){return d.level==='ERROR' ? '<span style="color:#c00;font-weight:bold">ERROR</span>' : '<span style="color:#c90;font-weight:bold">'+htmlEscape(d.level||'')+'</span>'; }},
-      {field:'ruleName',title:'违反校验规则',width:190,templet:function(d){return '<span title="'+htmlAttr(d.ruleCode||'')+'">'+htmlEscape(d.ruleName||'')+'</span>'; }},
-      {field:'message',title:'原因说明',minWidth:360,templet:function(d){return '<span title="'+htmlAttr((d.message||'')+' '+(d.suggestion||''))+'">'+htmlEscape(d.message||'')+'</span>'; }},
-      {field:'lineNo',title:'行',width:70},
-      {field:'fieldName',title:'字段',width:110},
-      {field:'questionId',title:'问题ID',width:110},
-      {field:'optionId',title:'选项ID',width:110}
-    ]]
+    $(selector).html(html);
+    form.render('select');
   });
 }
+
+function loadRunSchools(){
+  var divisionId = $('#runDivisionId').val();
+  var tableId = $('#runTableId').val();
+  $('#runSchoolId').html('<option value="">-- 请选择学校 --</option>');
+  if(!divisionId || !needsRunSchool(tableId)){
+    form.render('select');
+    return;
+  }
+  $.get('/api/v2/schools?divisionId='+encodeURIComponent(divisionId)+'&projectId='+encodeURIComponent($('#runProjectId').val() || ''), function(res){
+    var html = '<option value="">-- 请选择学校 --</option>';
+    (res.data || []).forEach(function(s){
+      html += '<option value="'+htmlEscape(s.id)+'">'+htmlEscape(s.name || s.schoolName || s.id)+'</option>';
+    });
+    $('#runSchoolId').html(html);
+    form.render('select');
+  });
+}
+
+function updateRunSchoolVisibility(){
+  var show = needsRunSchool($('#runTableId').val());
+  $('#runSchoolRow').toggle(show);
+}
+
+function needsRunSchool(tableId){
+  return ['3','4','5','6','7','8'].indexOf(String(tableId || '')) >= 0;
+}
+
 
 function renderStudentSplitResult(data){
   data = data || {};
@@ -662,13 +817,17 @@ function renderStudentSplitResult(data){
       {field:'studentId',title:'学生ID',width:150,templet:function(d){return htmlEscape(d.studentId || d.studentKey || '');}},
       {field:'studentName',title:'姓名',width:120,templet:function(d){return htmlEscape(d.studentName || '');}},
       {field:'passedText',title:'通过',minWidth:220,templet:function(d){return multilineRuleCell(d.passedText);}},
-      {field:'failedText',title:'未通过',minWidth:360,templet:function(d){return multilineRuleCell(d.failedText);}}
-    ]]
+      {field:'failedText',title:'未通过',minWidth:360,templet:function(d){return multilineRuleCell(d.failedText);}},
+      {field:'failedDetailText',title:'详细说明',minWidth:420,templet:function(d){return multilineRuleCell(d.failedDetailText);}}
+    ]],
+    done:function(){
+      $('#passedStudentTable').next('.layui-table-view').addClass('student-rule-result-table');
+    }
   });
 }
 
 function multilineRuleCell(value){
-  return '<div style="white-space:pre-line;line-height:22px;">'+htmlEscape(value || '')+'</div>';
+  return '<div class="student-rule-lines">'+htmlEscape(value || '')+'</div>';
 }
 
 function buildSplitFromValidationReport(report){
@@ -724,6 +883,27 @@ function sourceCell(s){
   var text = parts.join(', ');
   var show = text.length > 80 ? text.substring(0, 80) + '…' : text;
   return '<span title="'+htmlAttr(text)+'">'+htmlEscape(show)+'</span>';
+}
+
+function questionMappingCell(s){
+  return '<div class="rule-source-question-lines">'+htmlEscape(s || '')+'</div>';
+}
+
+function correctionEnabledCell(d){
+  var enabled = String(d && d.correctionEnabled != null ? d.correctionEnabled : '0') === '1';
+  return enabled ? '<span class="layui-badge layui-bg-green">是</span>' : '<span style="color:#999">否</span>';
+}
+
+function correctionEnabledText(d){
+  return String(d && d.correctionEnabled != null ? d.correctionEnabled : '0') === '1' ? '是' : '否';
+}
+
+function checkedAttr(value){
+  return String(value == null ? '0' : value) === '1' || value === true ? 'checked' : '';
+}
+
+function correctionOption(value, label, current){
+  return '<option value="'+htmlAttr(value)+'" '+(String(current || '') === String(value || '') ? 'selected' : '')+'>'+htmlEscape(label)+'</option>';
 }
 
 function htmlEscape(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}

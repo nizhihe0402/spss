@@ -36,6 +36,16 @@ public class SchemaInitializer {
                 "  editable TINYINT DEFAULT 1," +
                 "  target_variable VARCHAR(100)," +
                 "  source_variables VARCHAR(1000)," +
+                "  source_question_mappings TEXT," +
+                "  correction_enabled TINYINT DEFAULT 0," +
+                "  correction_type VARCHAR(100)," +
+                "  correction_variables VARCHAR(500)," +
+                "  correction_source VARCHAR(500)," +
+                "  correction_strategy VARCHAR(1000)," +
+                "  correction_apply_stage VARCHAR(100)," +
+                "  correction_write_clean TINYINT DEFAULT 0," +
+                "  correction_write_source TINYINT DEFAULT 0," +
+                "  correction_description TEXT," +
                 "  action_type VARCHAR(50)," +
                 "  affect_clean TINYINT DEFAULT 0," +
                 "  spss_source LONGTEXT," +
@@ -52,6 +62,22 @@ public class SchemaInitializer {
                 "  updated_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," +
                 "  INDEX idx_script (script_id)," +
                 "  INDEX idx_version (version_id)" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+            stmt.execute(
+                "CREATE TABLE IF NOT EXISTS sps_script_question_mapping (" +
+                "  id BIGINT AUTO_INCREMENT PRIMARY KEY," +
+                "  script_id BIGINT NOT NULL," +
+                "  variable_name VARCHAR(100) NOT NULL," +
+                "  question_id BIGINT NOT NULL," +
+                "  question_content VARCHAR(1000)," +
+                "  source_table_id BIGINT," +
+                "  export_content VARCHAR(300)," +
+                "  sort_no INT," +
+                "  created_time DATETIME DEFAULT CURRENT_TIMESTAMP," +
+                "  INDEX idx_script (script_id)," +
+                "  INDEX idx_question (question_id)," +
+                "  INDEX idx_variable (variable_name)" +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
             stmt.execute(
@@ -110,11 +136,21 @@ public class SchemaInitializer {
 
             // Ensure columns exist for upgraded databases
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN warning_message TEXT AFTER java_preview"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN source_question_mappings TEXT AFTER source_variables"); } catch (Exception ignored) {}
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN start_line INT AFTER sort_no"); } catch (Exception ignored) {}
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN end_line INT AFTER start_line"); } catch (Exception ignored) {}
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN line_count INT AFTER end_line"); } catch (Exception ignored) {}
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN segment_title VARCHAR(500) AFTER line_count"); } catch (Exception ignored) {}
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN split_reason VARCHAR(200) AFTER segment_title"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_enabled TINYINT DEFAULT 0 AFTER source_question_mappings"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_type VARCHAR(100) AFTER correction_enabled"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_variables VARCHAR(500) AFTER correction_type"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_source VARCHAR(500) AFTER correction_variables"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_strategy VARCHAR(1000) AFTER correction_source"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_apply_stage VARCHAR(100) AFTER correction_strategy"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_write_clean TINYINT DEFAULT 0 AFTER correction_apply_stage"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_write_source TINYINT DEFAULT 0 AFTER correction_write_clean"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_description TEXT AFTER correction_write_source"); } catch (Exception ignored) {}
         }
     }
 }

@@ -159,7 +159,7 @@ public class ArithmeticExpression {
                 String unit = parseStringArg().toLowerCase(Locale.ROOT);
                 match(')');
                 if (d1 == null || d2 == null) return null;
-                long diffMs = d2.longValue() - d1.longValue();
+                long diffMs = d1.longValue() - d2.longValue();
                 long diffDays = TimeUnit.MILLISECONDS.toDays(diffMs);
                 switch (unit) {
                     case "days":   return BigDecimal.valueOf(diffDays);

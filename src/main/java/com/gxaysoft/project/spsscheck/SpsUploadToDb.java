@@ -21,7 +21,7 @@ public class SpsUploadToDb {
 
         System.out.println("=== SPS Upload to Database ===");
         System.out.println("SPS dir: " + spsDir.toAbsolutePath());
-        System.out.println("DB    : localhost:3306/healthdetection_2025");
+        System.out.println("DB    : localhost:3306/h2025");
         System.out.println();
 
         try (Connection conn = DbConnection.get()) {
@@ -36,6 +36,7 @@ public class SpsUploadToDb {
             conn.createStatement().execute("DELETE FROM sps_rule_step");
             conn.createStatement().execute("DELETE FROM sps_output_rule");
             conn.createStatement().execute("DELETE FROM sps_rule");
+            conn.createStatement().execute("DELETE FROM sps_script_question_mapping");
             conn.createStatement().execute("DELETE FROM sps_script");
             System.out.println("Previous data cleaned.");
 
@@ -57,8 +58,14 @@ public class SpsUploadToDb {
                 List<SpssDatasetRule> datasetRules = SpssRuleParser.parseDatasetRules(spsText);
                 List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
 
+                long tableId = ScriptQuestionMappingService.inferTableIdFromScriptName(spsName);
+
                 // Insert script
-                long scriptId = repo.insertScript(spsName, spsText, spsName, -1);
+                long scriptId = repo.insertScript(spsName, spsText, spsName, tableId);
+                if (tableId > 0) {
+                    repo.insertScriptQuestionMappings(scriptId,
+                            ScriptQuestionMappingService.loadQuestionMappings(conn, tableId));
+                }
                 System.out.printf("  script_id=%d, %d rules, %d dataset rules, %d output rules%n",
                         scriptId, rules.size(), datasetRules.size(), outputRules.size());
 

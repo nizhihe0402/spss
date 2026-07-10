@@ -22,7 +22,7 @@ public class ConditionExpression {
             return ArithmeticExpression.evalMissing(trimmed, row);
         }
 
-        String[] orParts = trimmed.split("(?i)\\s+OR\\s+");
+        String[] orParts = trimmed.split("(?i)\\s+OR\\s+|\\s*\\|\\s*");
         for (String orPart : orParts) {
             if (evalOrPart(orPart.trim())) {
                 return true;
@@ -32,7 +32,7 @@ public class ConditionExpression {
     }
 
     private boolean evalOrPart(String expression) {
-        String[] andParts = expression.split("(?i)\\s+AND\\s+");
+        String[] andParts = expression.split("(?i)\\s+AND\\s+|\\s*&\\s*");
         for (String andPart : andParts) {
             if (!evalAtom(andPart.trim())) {
                 return false;

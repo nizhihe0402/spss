@@ -1,7 +1,10 @@
 package com.gxaysoft.project.spsscheck.web;
 
+import com.gxaysoft.project.spsscheck.execution.DbRuleExecutionDataLoader;
+import com.gxaysoft.project.spsscheck.execution.RuleCorrectionRuntimeService;
 import com.gxaysoft.project.spsscheck.io.AnswerPivot;
 import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
+import com.gxaysoft.project.spsscheck.io.StudentInfoEnricher;
 import com.gxaysoft.project.spsscheck.io.StudentInfoLoader;
 import com.gxaysoft.project.spsscheck.io.TableIdDetector;
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
@@ -9,7 +12,10 @@ import com.gxaysoft.project.spsscheck.model.QuestionMapping;
 import com.gxaysoft.project.spsscheck.model.RowContext;
 import com.gxaysoft.project.spsscheck.parser.QuestionJsonParser;
 import com.gxaysoft.project.spsscheck.parser.QuestionSqlParser;
+import com.gxaysoft.project.spsscheck.parser.QuestionVariableNameSelector;
 import com.gxaysoft.project.spsscheck.parser.SpssUtil;
+import com.gxaysoft.project.spsscheck.persistence.RuleExecutionPersistenceService;
+import com.gxaysoft.project.spsscheck.persistence.ScriptQuestionMappingService;
 import com.gxaysoft.project.spsscheck.validation.AnswerDataValidationReport;
 import com.gxaysoft.project.spsscheck.validation.AnswerDataValidator;
 import com.gxaysoft.project.spsscheck.validation.StudentSpssRuleResultBuilder;
@@ -30,6 +36,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,7 +77,90 @@ public class RuleExecuteV2Controller {
                     PrototypeFileReaders.readAnswerCsvDetailed(actualFile.getBytes());
             applyDefaults(csvLoad, actualTableId, actualProjectId, year);
 
-            AnswerDataValidationReport validationReport = new AnswerDataValidator(jdbc).validate(csvLoad);
+            Map<String, Object> response = executeLoaded(csvLoad, mappingFile, studentFile, scriptId, strictValidate, new LinkedHashMap<String, Object>());
+            response.remove("_correctionCleanValues");
+            return response;
+        } catch (Exception e) {
+            StringWriter sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
+            result.put("code", 500);
+            result.put("msg", "执行规则失败: " + e.getMessage());
+            result.put("trace", sw.toString());
+            return result;
+        }
+    }
+
+    @PostMapping("/execute-db")
+    public Map<String, Object> executeDb(@RequestParam(value = "scriptId", required = false) Long scriptId,
+                                         @RequestParam(value = "projectId", required = false) Long projectId,
+                                         @RequestParam(value = "project_id", required = false) Long projectId2,
+                                         @RequestParam(value = "tableId", required = false) Long tableId,
+                                         @RequestParam(value = "table_id", required = false) Long tableId2,
+                                         @RequestParam(value = "divisionId", required = false) Long divisionId,
+                                         @RequestParam(value = "division_id", required = false) Long divisionId2,
+                                         @RequestParam(value = "schoolId", required = false) Long schoolId,
+                                         @RequestParam(value = "school_id", required = false) Long schoolId2,
+                                         @RequestParam(value = "year", required = false) String year,
+                                         @RequestParam(value = "source", required = false, defaultValue = "normal") String source,
+                                         @RequestParam(value = "strictValidate", required = false, defaultValue = "false") boolean strictValidate) {
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        try {
+            DbRuleExecutionDataLoader.Request request = new DbRuleExecutionDataLoader.Request();
+            request.scriptId = scriptId == null ? -1L : scriptId.longValue();
+            request.projectId = firstPositive(projectId, projectId2);
+            request.tableId = firstPositive(tableId, tableId2);
+            request.divisionId = firstPositive(divisionId, divisionId2);
+            request.schoolId = firstPositive(schoolId, schoolId2);
+            request.year = year;
+            request.source = source;
+
+            DbRuleExecutionDataLoader.LoadResult loaded = new DbRuleExecutionDataLoader(jdbc).load(request);
+            Map<String, Object> extra = new LinkedHashMap<String, Object>();
+            extra.put("executionSource", "db");
+            extra.put("answerTable", loaded.getAnswerTable());
+            extra.put("projectId", request.projectId);
+            extra.put("tableId", request.tableId);
+            extra.put("divisionId", request.divisionId);
+            extra.put("schoolId", request.schoolId);
+            extra.put("source", source == null || source.trim().isEmpty() ? "normal" : source.trim());
+            extra.put("answerCount", loaded.getCsvLoad().getAnswers().size());
+            Map<String, Object> response = executeLoaded(loaded.getCsvLoad(), null, null, scriptId, strictValidate, extra);
+            @SuppressWarnings("unchecked")
+            Map<String, Map<String, String>> correctionCleanValues =
+                    response.get("_correctionCleanValues") instanceof Map
+                            ? (Map<String, Map<String, String>>) response.remove("_correctionCleanValues")
+                            : new LinkedHashMap<String, Map<String, String>>();
+            if (asLong(response.get("code"), -1L) == 0L && response.get("data") instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> spssResult = (Map<String, Object>) response.get("data");
+                RuleExecutionPersistenceService.SaveSummary saveSummary =
+                        new RuleExecutionPersistenceService(jdbc).saveDbExecutionResult(
+                                request, loaded.getAnswerTable(), loaded.getCsvLoad(), spssResult, correctionCleanValues);
+                response.put("persist", saveSummary.toMap());
+            }
+            return response;
+        } catch (IllegalArgumentException e) {
+            result.put("code", 400);
+            result.put("msg", e.getMessage());
+            return result;
+        } catch (Exception e) {
+            StringWriter sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
+            result.put("code", 500);
+            result.put("msg", "执行规则失败: " + e.getMessage());
+            result.put("trace", sw.toString());
+            return result;
+        }
+    }
+
+    private Map<String, Object> executeLoaded(PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
+                                              MultipartFile mappingFile,
+                                              MultipartFile studentFile,
+                                              Long scriptId,
+                                              boolean strictValidate,
+                                              Map<String, Object> extra) throws Exception {
+            Map<String, Object> result = new LinkedHashMap<String, Object>();
+            AnswerDataValidationReport validationReport = new AnswerDataValidator(jdbc).validate(csvLoad, false);
             Map<String, Object> fieldValidationResult =
                     new StudentValidationResultBuilder(jdbc).build(csvLoad, validationReport);
             if (strictValidate && !validationReport.isPassed()) {
@@ -89,22 +179,29 @@ public class RuleExecuteV2Controller {
             }
 
             List<AnswerRecord> answers = csvLoad.getAnswers();
-            long detectedTableId = actualTableId != null && actualTableId.longValue() > 0
-                    ? actualTableId.longValue() : TableIdDetector.detectMostFrequentTableId(answers);
+            long detectedTableId = TableIdDetector.detectMostFrequentTableId(answers);
             String spsText = loadScriptContent(scriptId);
-            Map<String, QuestionMapping> mappings = loadMappings(mappingFile, detectedTableId);
+            Map<String, QuestionMapping> mappings = loadMappings(mappingFile, scriptId);
 
+            StudentInfoEnricher.LoadResult dbStudentData = loadStudentDataFromDb(answers);
+            mappings.putAll(dbStudentData.mappings);
+            StudentInfoLoader.LoadResult bundledStudentData = loadBundledStudentData();
+            if (bundledStudentData != null) {
+                mappings.putAll(bundledStudentData.mappings);
+                StudentInfoEnricher.mergeMissingStudentInfo(dbStudentData.studentInfo, bundledStudentData.studentInfo);
+            }
             StudentInfoLoader.LoadResult studentData = loadStudentData(studentFile);
             if (studentData != null) {
                 mappings.putAll(studentData.mappings);
+                StudentInfoEnricher.mergeMissingStudentInfo(dbStudentData.studentInfo, studentData.studentInfo);
             }
 
             List<SpssCheckRule> rules = SpssRuleParser.parseRules(spsText);
             List<SpssDatasetRule> datasetRules = SpssRuleParser.parseDatasetRules(spsText);
             List<RowContext> rows = AnswerPivot.pivot(answers, mappings);
-            if (studentData != null) {
-                StudentInfoLoader.enrichRows(rows, studentData.studentInfo);
-            }
+            StudentInfoEnricher.enrichRows(rows, dbStudentData.studentInfo);
+            RuleCorrectionRuntimeService.CorrectionResult correctionResult =
+                    new RuleCorrectionRuntimeService(jdbc).apply(scriptId, detectedTableId, rows, dbStudentData.studentInfo);
 
             RuleEngine.execute(rows, rules);
             for (SpssDatasetRule datasetRule : datasetRules) {
@@ -117,19 +214,15 @@ public class RuleExecuteV2Controller {
             result.put("code", 0);
             result.put("msg", "SPS 规则执行完成");
             result.put("scriptId", scriptId);
-            result.put("tableId", detectedTableId);
+            result.put("dataTableId", detectedTableId);
             result.put("data", spssResult);
             result.put("fieldValidation", fieldValidationResult);
             result.put("validationReport", validationReport.toMap(300));
+            result.put("_correctionCleanValues", correctionResult.getCleanValues());
+            if (extra != null) {
+                result.putAll(extra);
+            }
             return result;
-        } catch (Exception e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
-            result.put("code", 500);
-            result.put("msg", "执行规则失败: " + e.getMessage());
-            result.put("trace", sw.toString());
-            return result;
-        }
     }
 
     private void applyDefaults(PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
@@ -172,8 +265,10 @@ public class RuleExecuteV2Controller {
         return value == null ? "" : String.valueOf(value);
     }
 
-    private Map<String, QuestionMapping> loadMappings(MultipartFile mappingFile, long tableId) throws Exception {
+    private Map<String, QuestionMapping> loadMappings(MultipartFile mappingFile, long scriptId) throws Exception {
         if (mappingFile != null && !mappingFile.isEmpty()) {
+            Long scriptTableId = loadScriptTableId(scriptId);
+            long tableId = scriptTableId == null ? -1L : scriptTableId.longValue();
             String filename = mappingFile.getOriginalFilename() == null ? "" : mappingFile.getOriginalFilename().toLowerCase();
             if (filename.endsWith(".json")) {
                 Path tmp = Files.createTempFile("spss_mapping_", ".json");
@@ -187,19 +282,28 @@ public class RuleExecuteV2Controller {
             String text = PrototypeFileReaders.decodeTextAuto(mappingFile.getBytes());
             return QuestionSqlParser.parseQuestionMappings(text, tableId);
         }
-        return loadMappingsFromDb(tableId);
+        return new ScriptQuestionMappingService(jdbc).loadVariableMappings(scriptId);
+    }
+
+    private Long loadScriptTableId(long scriptId) {
+        try {
+            return jdbc.queryForObject("SELECT table_id FROM sps_script WHERE id=?", Long.class, scriptId);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private Map<String, QuestionMapping> loadMappingsFromDb(long tableId) {
         Map<String, QuestionMapping> mappings = new LinkedHashMap<String, QuestionMapping>();
         try {
-            String sql = "SELECT question_id, table_id, content, export_sort, export_content " +
+            String sql = "SELECT question_id, table_id, content, export_content " +
                     "FROM bus_question WHERE table_id=? AND (del_flag IS NULL OR del_flag='0')";
             List<Map<String, Object>> rows = jdbc.queryForList(sql, tableId);
             for (Map<String, Object> row : rows) {
                 long questionId = asLong(row.get("question_id"), -1L);
                 long actualTableId = asLong(row.get("table_id"), tableId);
-                String variable = firstNonBlank(stringValue(row.get("export_sort")), stringValue(row.get("export_content")));
+                String variable = QuestionVariableNameSelector.variableNameFromExportContent(
+                        stringValue(row.get("export_content")));
                 if (questionId <= 0 || isBlank(variable)) continue;
                 mappings.put(SpssUtil.normalize(variable),
                         new QuestionMapping(questionId, variable, stringValue(row.get("content")), actualTableId));
@@ -208,6 +312,18 @@ public class RuleExecuteV2Controller {
             return mappings;
         }
         return mappings;
+    }
+
+    private StudentInfoEnricher.LoadResult loadStudentDataFromDb(List<AnswerRecord> answers) throws Exception {
+        return StudentInfoEnricher.load(jdbc.getDataSource(), StudentInfoEnricher.collectStudentIds(answers));
+    }
+
+    private StudentInfoLoader.LoadResult loadBundledStudentData() throws Exception {
+        Path path = Paths.get("docs", "sources", "data", "学生证件类型证件号.json");
+        if (!Files.exists(path)) {
+            return null;
+        }
+        return StudentInfoLoader.load(path);
     }
 
     private StudentInfoLoader.LoadResult loadStudentData(MultipartFile studentFile) throws Exception {
@@ -225,10 +341,6 @@ public class RuleExecuteV2Controller {
         return value == null ? "" : String.valueOf(value);
     }
 
-    private String firstNonBlank(String a, String b) {
-        return !isBlank(a) ? a.trim() : (isBlank(b) ? "" : b.trim());
-    }
-
     private long asLong(Object value, long defaultValue) {
         if (value == null) return defaultValue;
         if (value instanceof Number) return ((Number) value).longValue();
@@ -243,5 +355,11 @@ public class RuleExecuteV2Controller {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().length() == 0;
+    }
+
+    private long firstPositive(Long first, Long second) {
+        if (first != null && first.longValue() > 0) return first.longValue();
+        if (second != null && second.longValue() > 0) return second.longValue();
+        return -1L;
     }
 }

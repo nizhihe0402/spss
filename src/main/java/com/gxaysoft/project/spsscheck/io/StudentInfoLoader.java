@@ -13,25 +13,15 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Loads supplementary student-level data (证件类型, 证件号) from a JSON export of bus_student,
- * keyed by student_id. These fields are NOT in bus_question, so they need separate handling.
- */
 public final class StudentInfoLoader {
     private StudentInfoLoader() {
     }
 
-    /**
-     * Load student info JSON. Returns:
-     * - studentInfo: student_id → {SFZ→card, ZJTYPE→id_type}
-     * - mappings: synthetic QuestionMapping entries so the availability checker knows ZJTYPE/SFZ exist
-     */
     public static LoadResult load(Path jsonPath) throws IOException {
         String text = new String(Files.readAllBytes(jsonPath), StandardCharsets.UTF_8);
-        Map<String, Map<String, String>> studentInfo = new LinkedHashMap<>();
-        Map<String, QuestionMapping> mappings = new LinkedHashMap<>();
+        Map<String, Map<String, String>> studentInfo = new LinkedHashMap<String, Map<String, String>>();
+        Map<String, QuestionMapping> mappings = new LinkedHashMap<String, QuestionMapping>();
 
-        // Match each JSON object
         Pattern objPattern = Pattern.compile("\\{[^\\{]+?\\}", Pattern.DOTALL);
         Matcher objMatcher = objPattern.matcher(text);
 
@@ -44,22 +34,17 @@ public final class StudentInfoLoader {
 
             if (studentId == null || studentId.isEmpty()) continue;
 
-            Map<String, String> info = new LinkedHashMap<>();
-            if (card != null) info.put("SFZ", card);
-            if (idType != null) info.put("ZJTYPE", idType);
+            Map<String, String> info = new LinkedHashMap<String, String>();
+            String zjType = StudentInfoEnricher.toSpssZjtype(idType);
+            StudentInfoEnricher.putDocumentNumber(info, zjType, card);
+            if (zjType != null) info.put("ZJTYPE", zjType);
             studentInfo.put(studentId, info);
         }
 
-        // Add synthetic mappings so RuleAvailabilityChecker knows these variables exist
-        mappings.put("SFZ", new QuestionMapping(-1L, "SFZ", "身份证号", -1L));
-        mappings.put("ZJTYPE", new QuestionMapping(-1L, "ZJTYPE", "证件类型", -1L));
-
+        StudentInfoEnricher.addDocumentMappings(mappings, -1L);
         return new LoadResult(studentInfo, mappings);
     }
 
-    /**
-     * Enrich RowContext rows with student-level data by matching sampleKey → student_id.
-     */
     public static void enrichRows(List<RowContext> rows, Map<String, Map<String, String>> studentInfo) {
         for (RowContext row : rows) {
             Map<String, String> info = studentInfo.get(row.getSampleKey());
@@ -76,7 +61,6 @@ public final class StudentInfoLoader {
         Matcher m = p.matcher(obj);
         if (m.find()) return m.group(1).replace("\\/", "/").replace("\\\"", "\"");
 
-        // Try numeric value
         Pattern numP = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+)");
         m = numP.matcher(obj);
         if (m.find()) return m.group(1);

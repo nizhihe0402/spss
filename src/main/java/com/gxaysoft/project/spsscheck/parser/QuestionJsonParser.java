@@ -35,7 +35,7 @@ public final class QuestionJsonParser {
                 continue;
             }
 
-            String variable = firstVariableLike(extractString(obj, "export_sort"), ec);
+            String variable = QuestionVariableNameSelector.variableNameFromExportContent(ec);
             if (variable == null) {
                 continue;
             }
@@ -85,20 +85,4 @@ public final class QuestionJsonParser {
         return null;
     }
 
-    private static String firstVariableLike(String exportSort, String exportContent) {
-        if (exportSort != null && looksLikeSpssVariable(exportSort)) {
-            return exportSort;
-        }
-        if (exportContent != null && looksLikeSpssVariable(exportContent)) {
-            return exportContent;
-        }
-        return null;
-    }
-
-    private static boolean looksLikeSpssVariable(String value) {
-        if (value == null) {
-            return false;
-        }
-        return value.trim().matches("[A-Za-z][A-Za-z0-9_]*");
-    }
 }

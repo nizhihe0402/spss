@@ -38,6 +38,7 @@ public final class StudentSpssRuleResultBuilder {
 
                 List<String> passedCodes = new ArrayList<String>();
                 List<String> failedTexts = new ArrayList<String>();
+                List<String> failedDetailTexts = new ArrayList<String>();
                 List<Map<String, Object>> failedRules = new ArrayList<Map<String, Object>>();
 
                 for (RuleView rule : checkRules) {
@@ -46,15 +47,19 @@ public final class StudentSpssRuleResultBuilder {
                         passedCodes.add(rule.code);
                         passedRuleCount++;
                     } else {
+                        Object value = row.get(rule.target);
                         String display = rule.code + "丨" + rule.description;
+                        String detailText = failureDetailText(display, rule, row, value, flag);
                         failedTexts.add(display);
+                        failedDetailTexts.add(detailText);
                         failedRuleCount++;
                         Map<String, Object> detail = new LinkedHashMap<String, Object>();
                         detail.put("ruleCode", rule.code);
                         detail.put("target", rule.target);
                         detail.put("description", rule.description);
                         detail.put("displayText", display);
-                        detail.put("value", row.get(rule.target));
+                        detail.put("value", value);
+                        detail.put("reason", detailText);
                         failedRules.add(detail);
                     }
                 }
@@ -67,6 +72,7 @@ public final class StudentSpssRuleResultBuilder {
                 item.put("failedRules", failedRules);
                 item.put("passedText", joinLines(passedCodes));
                 item.put("failedText", joinLines(failedTexts));
+                item.put("failedDetailText", joinLines(failedDetailTexts));
                 item.put("passed", failedRules.isEmpty());
                 item.put("failedRuleCount", failedRules.size());
                 students.add(item);
@@ -94,11 +100,12 @@ public final class StudentSpssRuleResultBuilder {
     private static List<RuleView> checkRules(List<SpssCheckRule> rules) {
         List<RuleView> result = new ArrayList<RuleView>();
         if (rules == null) return result;
-        int n = 0;
+        int sortNo = 0;
         for (SpssCheckRule rule : rules) {
+            sortNo++;
             if (rule == null || !rule.isCheckRule()) continue;
-            n++;
-            result.add(new RuleView(String.format("R%03d", n), rule.getTarget(), description(rule)));
+            result.add(new RuleView(String.format("R%03d", sortNo), rule.getTarget(), description(rule),
+                    rule.getSourceVariables(), rule.getSpssSource()));
         }
         return result;
     }
@@ -109,6 +116,49 @@ public final class StudentSpssRuleResultBuilder {
         String description = rule.getDescription();
         if (!isBlank(description)) return description.trim();
         return rule.getTarget();
+    }
+
+    private static String failureDetailText(String display, RuleView rule, RowContext row, Object value, int flag) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(display);
+        String sourceValues = sourceValuesText(rule.sourceVariables, row);
+        if (!isBlank(sourceValues)) {
+            sb.append("\n源变量：").append(sourceValues);
+        }
+        sb.append("\n目标变量：").append(nullToEmpty(rule.target));
+        sb.append("\n当前值：").append(displayValue(value));
+        sb.append("\n规则结果：").append(flag);
+        if (!isBlank(rule.spssSource)) {
+            sb.append("\nSPSS规则：").append(oneLine(rule.spssSource));
+        }
+        sb.append("\n原因：规则结果不为0，按SPSS校验标记为未通过");
+        return sb.toString();
+    }
+
+    private static String sourceValuesText(List<String> sourceVariables, RowContext row) {
+        if (sourceVariables == null || sourceVariables.isEmpty() || row == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String source : sourceVariables) {
+            if (isBlank(source)) continue;
+            if (sb.length() > 0) sb.append("；");
+            sb.append(source.trim()).append("=").append(displayValue(row.get(source)));
+        }
+        return sb.toString();
+    }
+
+    private static String oneLine(String value) {
+        if (value == null) return "";
+        return value.replace('\r', ' ').replace('\n', ' ').trim().replaceAll("\\s+", " ");
+    }
+
+    private static String displayValue(Object value) {
+        if (value == null) return "缺失/null";
+        String text = String.valueOf(value).trim();
+        return text.length() == 0 ? "空值" : text;
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private static Map<String, StudentInfo> indexStudents(List<AnswerRecord> answers,
@@ -145,11 +195,15 @@ public final class StudentSpssRuleResultBuilder {
         final String code;
         final String target;
         final String description;
+        final List<String> sourceVariables;
+        final String spssSource;
 
-        RuleView(String code, String target, String description) {
+        RuleView(String code, String target, String description, List<String> sourceVariables, String spssSource) {
             this.code = code;
             this.target = target;
             this.description = description;
+            this.sourceVariables = sourceVariables;
+            this.spssSource = spssSource;
         }
     }
 

@@ -18,9 +18,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class SpssRuleParser {
-    private static final Pattern COMPUTE_PATTERN = Pattern.compile("(?i)COMPUTE\\s+([^=\\r\\n]+?)\\s*=\\s*(.+?)\\.", Pattern.DOTALL);
+    private static final Pattern COMPUTE_PATTERN = Pattern.compile("(?i)COMPUTE\\s+([^=\\r\\n]+?)\\s*=\\s*(.+?)\\.(?=\\s|$)", Pattern.DOTALL);
     private static final Pattern LABEL_PATTERN = Pattern.compile("(?i)VARIABLE\\s+LABELS\\s+([^\\s]+)\\s+'([^']*)'");
-    private static final Pattern RECODE_INTO_PATTERN = Pattern.compile("(?ims)^[ \\t]*RECODE\\s+(.+?)\\s+INTO\\s+([^\\.]+?)\\.");
+    private static final Pattern RECODE_INTO_PATTERN = Pattern.compile("(?im)^[ \\t]*RECODE\\s+(.+?)\\s+INTO\\s+([^\\r\\n\\.]+?)\\.(?=\\s|$)");
     private static final Pattern RECODE_SELF_PATTERN = Pattern.compile("(?im)^[ \\t]*RECODE\\s+([^\\s\\(]+)\\s+((?:\\([^\\)]*\\)\\s*)+)\\.");
     private static final Set<String> KEYWORDS = new LinkedHashSet<>(Arrays.asList(
             "COMPUTE", "EXECUTE", "RECODE", "SYSMIS", "ELSE", "THRU", "INTO",
@@ -343,11 +343,46 @@ public final class SpssRuleParser {
                 continue;
             }
             List<String> sourceVariables = extractSourceVariablesFromSteps(steps, target);
-            rules.add(new SpssCheckRule(target, "", labels.get(normalizedTarget), sourceVariables, true,
-                    block, toJavaRuleFromSteps(target, steps), steps));
+            boolean isCheck = isZeroOneRecodeCheck(steps);
+            rules.add(new SpssCheckRule(target, "", labels.get(normalizedTarget), sourceVariables, isCheck,
+                    block, toJavaRuleFromSteps(target, steps, isCheck), steps));
             consumedUntil = blockEnd;
         }
         return rules;
+    }
+
+    private static boolean isZeroOneRecodeCheck(List<RuleStep> steps) {
+        boolean sawRecode = false;
+        for (RuleStep step : steps) {
+            RecodeRuleStep recode = unwrapRecodeStep(step);
+            if (recode == null) {
+                continue;
+            }
+            sawRecode = true;
+            for (RecodeCase recodeCase : recode.getCases()) {
+                if (recodeCase.isCopyResult() || !recodeCase.isZeroOneResult()) {
+                    return false;
+                }
+            }
+        }
+        return sawRecode;
+    }
+
+    private static RecodeRuleStep unwrapRecodeStep(RuleStep step) {
+        if (step instanceof RecodeRuleStep) {
+            return (RecodeRuleStep) step;
+        }
+        if (step instanceof ConditionalRuleStep) {
+            try {
+                java.lang.reflect.Field f = ConditionalRuleStep.class.getDeclaredField("delegate");
+                f.setAccessible(true);
+                RuleStep delegate = (RuleStep) f.get(step);
+                return unwrapRecodeStep(delegate);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private static int findBlockEndForTarget(String text, int fromIndex, String target) {
@@ -478,7 +513,7 @@ public final class SpssRuleParser {
         while (matcher.find()) {
             String from = matcher.group(1).trim();
             String to = matcher.group(2).trim();
-            if ("SYSMIS".equalsIgnoreCase(from)) {
+            if ("SYSMIS".equalsIgnoreCase(from) || "MISSING".equalsIgnoreCase(from)) {
                 cases.add(RecodeCase.missing(to));
             } else if ("ELSE".equalsIgnoreCase(from)) {
                 cases.add(RecodeCase.elseCase(to));
@@ -507,6 +542,10 @@ public final class SpssRuleParser {
     }
 
     private static String toJavaRuleFromSteps(String target, List<RuleStep> steps) {
+        return toJavaRuleFromSteps(target, steps, true);
+    }
+
+    private static String toJavaRuleFromSteps(String target, List<RuleStep> steps, boolean checkRule) {
         StringBuilder builder = new StringBuilder();
         for (RuleStep step : steps) {
             if (builder.length() > 0) {
@@ -514,8 +553,10 @@ public final class SpssRuleParser {
             }
             builder.append(step.javaRule());
         }
-        builder.append("; ").append(target).append(" = missing(").append(target).append(") || ")
-                .append(target).append(" != 0 ? 1 : 0");
+        if (checkRule) {
+            builder.append("; ").append(target).append(" = missing(").append(target).append(") || ")
+                    .append(target).append(" != 0 ? 1 : 0");
+        }
         return builder.toString();
     }
 
@@ -612,8 +653,13 @@ public final class SpssRuleParser {
         int nextCompute = indexOfIgnoreCase(text, "COMPUTE", fromIndex);
         int end = nextCompute < 0 ? text.length() : nextCompute;
         String block = text.substring(fromIndex, end);
-        Pattern pattern = Pattern.compile("(?i)RECODE\\s+" + Pattern.quote(target) + "(\\s|\\()");
-        return pattern.matcher(block).find();
+        Matcher matcher = RECODE_SELF_PATTERN.matcher(block);
+        while (matcher.find()) {
+            if (SpssUtil.normalize(target).equals(SpssUtil.normalize(matcher.group(1)))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int indexOfIgnoreCase(String text, String needle, int fromIndex) {

@@ -30,7 +30,7 @@ public final class RuleEngine {
                     }
                     if (rule.isCheckRule()) {
                         BigDecimal value = row.getDecimal(rule.getTarget());
-                        int flag = value == null || value.compareTo(BigDecimal.ZERO) != 0 ? 1 : 0;
+                        int flag = value != null && value.compareTo(BigDecimal.ZERO) != 0 ? 1 : 0;
                         row.put(rule.getTarget(), flag);
                         row.putFlag(rule.getTarget(), flag);
                     }

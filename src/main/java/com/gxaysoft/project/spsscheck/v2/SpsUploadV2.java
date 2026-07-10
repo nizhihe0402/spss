@@ -99,31 +99,45 @@ public class SpsUploadV2 {
 
     static void insertRuleV2(Connection conn, long scriptId, int sortNo, RuleDefinition rd) throws SQLException {
         String code = String.format("R%03d", sortNo);
+        String sources = String.join(",", rd.getSourceVariables());
+        RuleCorrectionPlan correction = RuleCorrectionPlan.detect(
+                rd.getType().name(), rd.getTarget(), sources, rd.getDescription());
         try (PreparedStatement ps = conn.prepareStatement(
                 "INSERT INTO sps_rule (script_id,rule_code,rule_name,rule_type,target_variable," +
-                "source_variables,spss_source,rule_json,java_preview,warning_message,sort_no," +
+                "source_variables,correction_enabled,correction_type,correction_variables,correction_source," +
+                "correction_strategy,correction_apply_stage,correction_write_clean,correction_write_source," +
+                "correction_description,spss_source,rule_json,java_preview,warning_message,sort_no," +
                 "start_line,end_line,line_count,segment_title,split_reason,affect_clean) " +
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
             ps.setLong(1, scriptId);
             ps.setString(2, code);
             ps.setString(3, rd.getTarget());
             ps.setString(4, rd.getType().name());
             ps.setString(5, rd.getTarget());
-            ps.setString(6, String.join(",", rd.getSourceVariables()));
-            ps.setString(7, truncate(rd.getSpssBlock(), 65535));
-            ps.setString(8, "{\"v2\":true,\"type\":\"" + rd.getType().name() + "\","
+            ps.setString(6, sources);
+            ps.setInt(7, correction.enabled ? 1 : 0);
+            ps.setString(8, correction.type);
+            ps.setString(9, correction.variables);
+            ps.setString(10, correction.source);
+            ps.setString(11, correction.strategy);
+            ps.setString(12, correction.applyStage);
+            ps.setInt(13, correction.writeClean ? 1 : 0);
+            ps.setInt(14, correction.writeSource ? 1 : 0);
+            ps.setString(15, correction.description);
+            ps.setString(16, truncate(rd.getSpssBlock(), 65535));
+            ps.setString(17, "{\"v2\":true,\"type\":\"" + rd.getType().name() + "\","
                     + "\"startLine\":" + rd.getStartLine() + ","
                     + "\"endLine\":" + rd.getEndLine() + ","
                     + "\"segmentIndex\":" + rd.getSegmentIndex() + "}");
-            ps.setString(9, rd.getJavaPreview());
-            ps.setString(10, rd.getDescription());
-            ps.setInt(11, sortNo);
-            ps.setInt(12, rd.getStartLine());
-            ps.setInt(13, rd.getEndLine());
-            ps.setInt(14, rd.getLineCount());
-            ps.setString(15, rd.getSegmentTitle());
-            ps.setString(16, rd.getSplitReason());
-            ps.setInt(17, rd.getType() == RuleType.IDENTITY_CHECK
+            ps.setString(18, rd.getJavaPreview());
+            ps.setString(19, rd.getDescription());
+            ps.setInt(20, sortNo);
+            ps.setInt(21, rd.getStartLine());
+            ps.setInt(22, rd.getEndLine());
+            ps.setInt(23, rd.getLineCount());
+            ps.setString(24, rd.getSegmentTitle());
+            ps.setString(25, rd.getSplitReason());
+            ps.setInt(26, rd.getType() == RuleType.IDENTITY_CHECK
                     || rd.getType() == RuleType.MISSING_CHECK
                     || rd.getType() == RuleType.RANGE_CHECK
                     || rd.getType() == RuleType.CONSISTENCY_CHECK

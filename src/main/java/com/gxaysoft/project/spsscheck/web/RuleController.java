@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import com.gxaysoft.project.spsscheck.persistence.SourceQuestionMappingSyncService;
+
 import java.util.*;
 
 @RestController
@@ -18,6 +20,7 @@ public class RuleController {
         return jdbc.queryForList(
             "SELECT id, rule_code AS code, rule_name AS name, rule_type AS type, " +
             "target_variable AS target, source_variables AS sources, " +
+            "source_question_mappings AS sourceQuestionMappings, " +
             "warning_message AS description, sort_no AS sort " +
             "FROM sps_rule WHERE script_id=? ORDER BY sort_no", scriptId);
     }
@@ -27,6 +30,7 @@ public class RuleController {
         Map<String, Object> rule = jdbc.queryForMap(
             "SELECT id, rule_code AS code, rule_name AS name, rule_type AS type, " +
             "target_variable AS target, source_variables AS sources, enabled, " +
+            "source_question_mappings AS sourceQuestionMappings, " +
             "spss_source AS spss, java_preview AS java, rule_json AS ruleJson, " +
             "warning_message AS description " +
             "FROM sps_rule WHERE id=?", id);
@@ -44,8 +48,9 @@ public class RuleController {
         String target = body.get("target");
         String sources = body.get("sources");
         String desc = body.get("description");
-        jdbc.update("UPDATE sps_rule SET rule_name=?, target_variable=?, source_variables=?, warning_message=? WHERE id=?",
-                name, target, sources, desc, id);
+        String sourceQuestionMappings = new SourceQuestionMappingSyncService(jdbc).buildForSources(sources, null);
+        jdbc.update("UPDATE sps_rule SET rule_name=?, target_variable=?, source_variables=?, source_question_mappings=?, warning_message=? WHERE id=?",
+                name, target, sources, sourceQuestionMappings, desc, id);
         return Collections.singletonMap("code", 0);
     }
 
