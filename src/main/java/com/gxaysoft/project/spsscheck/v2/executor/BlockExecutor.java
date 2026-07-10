@@ -9,6 +9,9 @@ import com.gxaysoft.project.spsscheck.model.*;
 import com.gxaysoft.project.spsscheck.parser.*;
 import com.gxaysoft.project.spsscheck.v1.parser.*;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
@@ -18,6 +21,7 @@ import java.util.*;
  * Replaces the Step-based parsing approach.
  */
 public final class BlockExecutor {
+    private static final Logger log = LoggerFactory.getLogger(BlockExecutor.class);
 
     public static class RunResult {
         public String spsName;
@@ -35,6 +39,7 @@ public final class BlockExecutor {
      */
     public static RunResult run(Path spsPath, Path mappingPath, Path csvPath, Path studentPath) throws Exception {
         String spsName = spsPath.getFileName().toString().replace(".sps", "");
+        log.info("开始执行: sps={}", spsName);
         String spsText = PrototypeFileReaders.readSpssText(spsPath);
 
         RunResult result = new RunResult();

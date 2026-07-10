@@ -24,6 +24,8 @@ import com.gxaysoft.project.spsscheck.v1.executor.RuleEngine;
 import com.gxaysoft.project.spsscheck.v1.model.SpssCheckRule;
 import com.gxaysoft.project.spsscheck.v1.model.SpssDatasetRule;
 import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,8 +34,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -44,6 +44,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v2/rules")
 public class RuleExecuteV2Controller {
+    private static final Logger log = LoggerFactory.getLogger(RuleExecuteV2Controller.class);
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -81,11 +82,9 @@ public class RuleExecuteV2Controller {
             response.remove("_correctionCleanValues");
             return response;
         } catch (Exception e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
+            log.error("执行规则失败", e);
             result.put("code", 500);
             result.put("msg", "执行规则失败: " + e.getMessage());
-            result.put("trace", sw.toString());
             return result;
         }
     }
@@ -144,11 +143,9 @@ public class RuleExecuteV2Controller {
             result.put("msg", e.getMessage());
             return result;
         } catch (Exception e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
+            log.error("执行规则失败", e);
             result.put("code", 500);
             result.put("msg", "执行规则失败: " + e.getMessage());
-            result.put("trace", sw.toString());
             return result;
         }
     }

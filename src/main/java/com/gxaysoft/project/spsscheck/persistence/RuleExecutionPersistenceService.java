@@ -3,6 +3,8 @@ package com.gxaysoft.project.spsscheck.persistence;
 import com.gxaysoft.project.spsscheck.execution.DbRuleExecutionDataLoader;
 import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
@@ -14,6 +16,8 @@ import java.util.Map;
 import java.util.Set;
 
 public class RuleExecutionPersistenceService {
+    private static final Logger log = LoggerFactory.getLogger(RuleExecutionPersistenceService.class);
+
     private final JdbcTemplate jdbc;
 
     public RuleExecutionPersistenceService(JdbcTemplate jdbc) {
@@ -49,6 +53,7 @@ public class RuleExecutionPersistenceService {
         int correctionRows = updateCleanCorrections(request, cleanTable, csvLoad, correctionCleanValues);
         int failRows = insertFailRows(request, answerTable, failTable, failures, csvLoad, cleanTaskId);
 
+        log.info("执行结果已保存: cleanTable={}, cleanRows={}, failRows={}", cleanTable, cleanRows, failRows);
         return new SaveSummary(cleanTable, failTable, cleanRows, failRows, correctionRows, cleanTaskId);
     }
 

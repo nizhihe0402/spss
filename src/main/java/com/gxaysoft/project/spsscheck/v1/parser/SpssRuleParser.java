@@ -5,6 +5,8 @@ import com.gxaysoft.project.spsscheck.parser.SpssUtil;
 import com.gxaysoft.project.spsscheck.model.RowContext;
 import com.gxaysoft.project.spsscheck.model.RecodeCase;
 import com.gxaysoft.project.spsscheck.model.QuestionMapping;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,6 +20,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class SpssRuleParser {
+    private static final Logger log = LoggerFactory.getLogger(SpssRuleParser.class);
+
     private static final Pattern COMPUTE_PATTERN = Pattern.compile("(?i)COMPUTE\\s+([^=\\r\\n]+?)\\s*=\\s*(.+?)\\.(?=\\s|$)", Pattern.DOTALL);
     private static final Pattern LABEL_PATTERN = Pattern.compile("(?i)VARIABLE\\s+LABELS\\s+([^\\s]+)\\s+'([^']*)'");
     private static final Pattern RECODE_INTO_PATTERN = Pattern.compile("(?im)^[ \\t]*RECODE\\s+(.+?)\\s+INTO\\s+([^\\r\\n\\.]+?)\\.(?=\\s|$)");
@@ -81,6 +85,7 @@ public final class SpssRuleParser {
         }
         rules.addAll(parseRecodeIntoRules(spssText, labels));
         rules.addAll(parseStandaloneIfAssignRules(spssText, labels));
+        log.info("解析完成: rules={}", rules.size());
         return mergeInitDeclarations(rules, labels);
     }
 
