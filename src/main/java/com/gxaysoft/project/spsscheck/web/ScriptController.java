@@ -33,12 +33,22 @@ public class ScriptController {
 
     @GetMapping
     public List<Map<String, Object>> list() {
-        return jdbc.queryForList(
-            "SELECT id, script_name AS name, parse_status AS parse, status, " +
-            "version_no AS ver, (SELECT COUNT(*) FROM sps_rule WHERE script_id=s.id) AS rules, " +
-            "table_id AS tableId, project_id AS projectId, project_type AS projectType, year, " +
-            "DATE_FORMAT(created_time, '%Y-%m-%d %H:%i') AS time " +
-            "FROM sps_script s ORDER BY id DESC");
+        try {
+            return jdbc.queryForList(
+                "SELECT id, script_name AS name, parse_status AS parse, status, " +
+                "version_no AS ver, (SELECT COUNT(*) FROM sps_rule WHERE script_id=s.id) AS rules, " +
+                "table_id AS tableId, project_id AS projectId, project_type AS projectType, year, " +
+                "DATE_FORMAT(created_time, '%Y-%m-%d %H:%i') AS time " +
+                "FROM sps_script s ORDER BY id DESC");
+        } catch (Exception e) {
+            log.warn("sps_script缺少project_id等列，降级查询: {}", e.getMessage());
+            return jdbc.queryForList(
+                "SELECT id, script_name AS name, parse_status AS parse, status, " +
+                "version_no AS ver, (SELECT COUNT(*) FROM sps_rule WHERE script_id=s.id) AS rules, " +
+                "table_id AS tableId, " +
+                "DATE_FORMAT(created_time, '%Y-%m-%d %H:%i') AS time " +
+                "FROM sps_script s ORDER BY id DESC");
+        }
     }
 
     @GetMapping("/{id}/rules")
