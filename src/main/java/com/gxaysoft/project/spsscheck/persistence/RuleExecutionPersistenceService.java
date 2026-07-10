@@ -5,11 +5,10 @@ import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,12 +23,11 @@ public class RuleExecutionPersistenceService {
     private static final Logger log = LoggerFactory.getLogger(RuleExecutionPersistenceService.class);
 
     private final JdbcTemplate jdbc;
+    private final TransactionTemplate tx;
 
-    @Autowired
-    private RuleExecutionPersistenceService self; // 自注入，用于触发 @Transactional AOP 代理
-
-    public RuleExecutionPersistenceService(JdbcTemplate jdbc) {
+    public RuleExecutionPersistenceService(JdbcTemplate jdbc, PlatformTransactionManager txManager) {
         this.jdbc = jdbc;
+        this.tx = new TransactionTemplate(txManager);
     }
 
     public SaveSummary saveDbExecutionResult(DbRuleExecutionDataLoader.Request request,
@@ -58,13 +56,12 @@ public class RuleExecutionPersistenceService {
         ensureCleanTable(answerTable, cleanTable);
         ensureFailTable(answerTable, failTable);
 
-        // Step 2: 写入数据（DML，独立事务，通过 self 触发 AOP 代理）
-        return self.doSaveData(request, answerTable, csvLoad, spssResult, correctionCleanValues,
-                cleanTable, failTable);
+        // Step 2: 写入数据（DML，TransactionTemplate 管理事务，DDL 在外部已执行完）
+        return tx.execute(status -> doSaveData(request, answerTable, csvLoad, spssResult,
+                correctionCleanValues, cleanTable, failTable));
     }
 
-    @Transactional
-    public SaveSummary doSaveData(DbRuleExecutionDataLoader.Request request,
+    private SaveSummary doSaveData(DbRuleExecutionDataLoader.Request request,
                                    String answerTable,
                                    PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
                                    Map<String, Object> spssResult,
