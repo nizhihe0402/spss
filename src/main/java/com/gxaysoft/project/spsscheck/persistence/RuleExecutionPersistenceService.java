@@ -47,12 +47,12 @@ public class RuleExecutionPersistenceService {
         long cleanTaskId = System.currentTimeMillis();
 
         ensureCleanTable(answerTable, cleanTable);
-        ensureFailTable(failTable);
+        ensureFailTable(answerTable, failTable);
 
         List<Long> sourceIds = allSourceIds(csvLoad);
         List<Long> cleanIds = cleanSourceIds(csvLoad, spssResult);
         List<FailDetail> failures = failDetails(spssResult);
-        clearPreviousResults(request, cleanTable, failTable, sourceIds);
+        clearPreviousResults(request, answerTable, cleanTable, failTable, cleanIds);
 
         int cleanRows = insertCleanRows(answerTable, cleanTable, cleanIds, cleanTaskId);
         int correctionRows = updateCleanCorrections(request, cleanTable, csvLoad, correctionCleanValues);
@@ -133,48 +133,49 @@ public class RuleExecutionPersistenceService {
         ensureColumn(cleanTable, "source_id", "BIGINT NULL");
     }
 
-    private void ensureFailTable(String failTable) {
-        jdbc.execute("CREATE TABLE IF NOT EXISTS " + failTable + " (" +
-                "id BIGINT AUTO_INCREMENT PRIMARY KEY," +
-                "clean_task_id BIGINT NULL," +
-                "source_table VARCHAR(100) NULL," +
-                "source_id BIGINT NULL," +
-                "project_id BIGINT NULL," +
-                "table_id BIGINT NULL," +
-                "year VARCHAR(20) NULL," +
-                "division_id BIGINT NULL," +
-                "school_id BIGINT NULL," +
-                "student_id BIGINT NULL," +
-                "student_key VARCHAR(100) NULL," +
-                "question_id BIGINT NULL," +
-                "rule_code VARCHAR(50) NULL," +
-                "rule_target VARCHAR(100) NULL," +
-                "rule_name VARCHAR(300) NULL," +
-                "failed_value VARCHAR(500) NULL," +
-                "reason VARCHAR(500) NULL," +
-                "reason_detail LONGTEXT NULL," +
-                "spss_source LONGTEXT NULL," +
-                "del_flag CHAR(1) DEFAULT '0'," +
-                "create_time DATETIME DEFAULT CURRENT_TIMESTAMP," +
-                "INDEX idx_scope(project_id, table_id, year, division_id, school_id)," +
-                "INDEX idx_student(student_id)," +
-                "INDEX idx_rule(rule_code)," +
-                "INDEX idx_source(source_table, source_id)" +
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    /**
+     * 创建 _fail 表：镜像源表结构 + 错误追踪元数据列。
+     * 与 _clean 表策略一致（CREATE TABLE ... LIKE 拷贝源表全部列）。
+     */
+    private void ensureFailTable(String answerTable, String failTable) {
+        if (!tableExists(failTable)) {
+            jdbc.execute("CREATE TABLE " + failTable + " LIKE " + answerTable);
+        }
+        ensureColumn(failTable, "clean_task_id", "BIGINT NULL");
+        ensureColumn(failTable, "source_id", "BIGINT NULL");
+        ensureColumn(failTable, "division_id", "BIGINT NULL COMMENT '区县(执行参数)'");
+        ensureColumn(failTable, "school_id", "BIGINT NULL COMMENT '学校(执行参数)'");
+        ensureColumn(failTable, "rule_code", "VARCHAR(50) NULL");
+        ensureColumn(failTable, "rule_target", "VARCHAR(100) NULL");
+        ensureColumn(failTable, "rule_name", "VARCHAR(300) NULL");
+        ensureColumn(failTable, "failed_value", "VARCHAR(500) NULL");
+        ensureColumn(failTable, "reason", "VARCHAR(500) NULL");
+        ensureColumn(failTable, "reason_detail", "LONGTEXT NULL");
     }
 
     @Transactional
     private void clearPreviousResults(DbRuleExecutionDataLoader.Request request,
+                                      String answerTable,
                                       String cleanTable,
                                       String failTable,
                                       List<Long> cleanIds) {
+        // _clean: 按 source_id 精确删除已清洗的记录
         if (!cleanIds.isEmpty()) {
             jdbc.update("DELETE FROM " + cleanTable + " WHERE source_id IN (" + placeholders(cleanIds.size()) + ")",
                     cleanIds.toArray());
         }
-        jdbc.update("DELETE FROM " + failTable + " WHERE project_id=? AND table_id=? AND year=? " +
-                        "AND division_id=? AND (? <= 0 OR school_id=?)",
-                request.projectId, request.tableId, request.year, request.divisionId, request.schoolId, request.schoolId);
+        // _fail: 按执行范围删除（project/table/year/division/school），source_id 无法穷举
+        if (hasTimesColumn(answerTable) || isStudentAnswer(answerTable)) {
+            // 医生/学生表：可按区县+学校过滤
+            jdbc.update("DELETE FROM " + failTable + " WHERE project_id=? AND table_id=? AND year=? " +
+                            "AND division_id=? AND (? <= 0 OR school_id=?)",
+                    request.projectId, request.tableId, request.year,
+                    request.divisionId, request.schoolId, request.schoolId);
+        } else {
+            // 用户表：无区县/学校维度，按 project/table/year 过滤
+            jdbc.update("DELETE FROM " + failTable + " WHERE project_id=? AND table_id=? AND year=?",
+                    request.projectId, request.tableId, request.year);
+        }
     }
 
     @Transactional
@@ -232,6 +233,10 @@ public class RuleExecutionPersistenceService {
         return result;
     }
 
+    /**
+     * 插入失败记录到 _fail 表：从源表复制完整行数据 + 错误元数据。
+     * 新 _fail 表结构镜像源表（CREATE TABLE ... LIKE），故用 INSERT ... SELECT。
+     */
     @Transactional
     private int insertFailRows(DbRuleExecutionDataLoader.Request request,
                                String answerTable,
@@ -243,34 +248,29 @@ public class RuleExecutionPersistenceService {
             return 0;
         }
         Map<String, AnswerRecord> sourceByStudent = firstAnswerByStudent(csvLoad);
-        String sql = "INSERT INTO " + failTable + " (clean_task_id, source_table, source_id, project_id, table_id, " +
-                "year, division_id, school_id, student_id, student_key, question_id, rule_code, rule_target, " +
-                "rule_name, failed_value, reason, reason_detail, spss_source, del_flag, create_time) " +
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, '0', NOW())";
+        String columns = baseColumns(answerTable);
+        String selectColumns = selectedBaseColumns(answerTable);
+        String sql = "INSERT INTO " + failTable + " (" + columns +
+                ", clean_task_id, source_id, division_id, school_id, " +
+                "rule_code, rule_target, rule_name, failed_value, reason, reason_detail) " +
+                "SELECT " + selectColumns + ", ?, a.id, ?, ?, ?, ?, ?, ?, ? " +
+                "FROM " + answerTable + " a WHERE a.id = ?";
         int count = 0;
         for (FailDetail failure : failures) {
             AnswerRecord source = sourceByStudent.get(failure.studentKey);
             Long sourceId = source == null || source.getRawId() <= 0 ? null : Long.valueOf(source.getRawId());
-            Long questionId = source == null || source.getQuestionId() <= 0 ? null : Long.valueOf(source.getQuestionId());
+            if (sourceId == null) continue;
             jdbc.update(sql,
                     Long.valueOf(cleanTaskId),
-                    answerTable,
-                    sourceId,
-                    Long.valueOf(request.projectId),
-                    Long.valueOf(request.tableId),
-                    request.year,
                     Long.valueOf(request.divisionId),
                     request.schoolId > 0 ? Long.valueOf(request.schoolId) : null,
-                    failure.studentId,
-                    failure.studentKey,
-                    questionId,
                     truncate(failure.ruleCode, 50),
                     truncate(failure.ruleTarget, 100),
                     truncate(failure.ruleName, 300),
                     truncate(failure.failedValue, 500),
                     truncate(failure.reasonDetail, 500),
                     failure.reasonDetail,
-                    failure.displayText);
+                    sourceId);
             count++;
         }
         return count;
@@ -363,6 +363,10 @@ public class RuleExecutionPersistenceService {
 
     private static boolean isUserAnswer(String answerTable) {
         return answerTable.startsWith("bus_user_answer");
+    }
+
+    private static boolean isStudentAnswer(String answerTable) {
+        return answerTable.startsWith("bus_student_answer");
     }
 
     private static boolean hasTimesColumn(String answerTable) {
