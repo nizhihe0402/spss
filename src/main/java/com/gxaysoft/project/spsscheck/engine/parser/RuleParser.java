@@ -130,8 +130,58 @@ public final class RuleParser {
         List<Rule> merged = mergeInitDeclarations(rules, labels);
         for (Rule r : merged) {
             r.setJavaPreview(buildJavaPreview(r));
+            r.setExecutionChain(buildExecutionChain(r));
         }
         return merged;
+    }
+
+    /**
+     * 构建完整执行链路（不截断），保存到 execution_chain 字段。
+     */
+    static String buildExecutionChain(Rule rule) {
+        if (rule.getSteps() == null || rule.getSteps().isEmpty()) {
+            if (rule.getExpression() != null && !rule.getExpression().isEmpty()) {
+                return "每行 RowContext:\n  " + rule.getTarget() + " = " + rule.getExpression();
+            }
+            return null;
+        }
+        StringBuilder sb = new StringBuilder("每行 RowContext:\n");
+        for (int i = 0; i < rule.getSteps().size(); i++) {
+            Step step = rule.getSteps().get(i);
+            sb.append("  Step ").append(i + 1).append(": ");
+            if (step.getCondition() != null) {
+                sb.append("IF(").append(step.getCondition()).append(") → ");
+            } else {
+                sb.append("无条件 → ");
+            }
+            if (step.getAction() instanceof ComputeAction) {
+                ComputeAction ca = (ComputeAction) step.getAction();
+                sb.append("COMPUTE ").append(step.getTarget()).append(" = ").append(ca.getExpression());
+            } else if (step.getAction() instanceof RecodeAction) {
+                RecodeAction ra = (RecodeAction) step.getAction();
+                sb.append("RECODE ").append(ra.getSource()).append("(");
+                if (ra.getCases() != null) {
+                    for (int j = 0; j < ra.getCases().size(); j++) {
+                        if (j > 0) sb.append(", ");
+                        sb.append(ra.getCases().get(j).toDisplayString());
+                    }
+                }
+                sb.append(") → ").append(step.getTarget());
+                // 判断是否覆盖前面的值
+                if (i > 0) {
+                    sb.append(" → 覆盖").append(step.getTarget());
+                }
+            } else if (step.getAction() instanceof IfAssignAction) {
+                IfAssignAction ia = (IfAssignAction) step.getAction();
+                sb.append("IF(").append(ia.getCondition()).append(") ").append(step.getTarget())
+                  .append(" = ").append(ia.getValue());
+            }
+            sb.append("\n");
+        }
+        if (rule.isCheckRule()) {
+            sb.append("  → ").append(rule.getTarget()).append(" 最终值 != 0 ? flag=1(未通过) : flag=0(通过)\n");
+        }
+        return sb.toString();
     }
 
     /**

@@ -5,6 +5,7 @@ ALTER TABLE sps_rule ADD COLUMN IF NOT EXISTS end_line INT AFTER start_line;
 ALTER TABLE sps_rule ADD COLUMN IF NOT EXISTS line_count INT AFTER end_line;
 ALTER TABLE sps_rule ADD COLUMN IF NOT EXISTS segment_title VARCHAR(500) AFTER line_count;
 ALTER TABLE sps_rule ADD COLUMN IF NOT EXISTS split_reason VARCHAR(200) AFTER segment_title;
+ALTER TABLE sps_rule ADD COLUMN IF NOT EXISTS execution_chain LONGTEXT AFTER java_preview;
 
 ALTER TABLE sps_script ADD COLUMN IF NOT EXISTS project_id BIGINT AFTER table_id;
 ALTER TABLE sps_script ADD COLUMN IF NOT EXISTS project_type VARCHAR(20) AFTER project_id;
