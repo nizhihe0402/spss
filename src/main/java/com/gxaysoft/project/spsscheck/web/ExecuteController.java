@@ -51,9 +51,11 @@ public class ExecuteController {
             @RequestParam("divisionId") Long divisionId,
             @RequestParam(value = "schoolId", required = false) Long schoolId,
             @RequestParam("year") String year,
-            @RequestParam(value = "source", defaultValue = "normal") String source) {
-        log.info("DB执行请求: scriptId={}, projectId={}, tableId={}, year={}",
-                scriptId, projectId, tableId, year);
+            @RequestParam(value = "source", defaultValue = "normal") String source,
+            @RequestParam(value = "grade", required = false) String grade,
+            @RequestParam(value = "studentClass", required = false) String studentClass) {
+        log.info("DB执行请求: scriptId={}, projectId={}, tableId={}, year={}, grade={}, class={}",
+                scriptId, projectId, tableId, year, grade, studentClass);
         DbRuleExecutionDataLoader.Request req = new DbRuleExecutionDataLoader.Request();
         req.scriptId = scriptId;
         req.projectId = projectId;
@@ -62,6 +64,8 @@ public class ExecuteController {
         req.schoolId = schoolId != null ? schoolId : -1L;
         req.year = year;
         req.source = source;
+        req.grade = grade;
+        req.studentClass = studentClass;
         return executionService.executeFromDb(req);
     }
 }

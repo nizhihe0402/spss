@@ -21,10 +21,8 @@ public class DbRuleExecutionDataLoader {
         String answerTable = resolveAnswerTable(request.tableId, request.source);
         AnswerTableType type = AnswerTableType.fromTableId(request.tableId);
         boolean userAnswer = type.isUserAnswer();
-        String sql = buildSqlForTable(request.tableId, answerTable);
-        Object[] args = userAnswer
-                ? new Object[]{request.projectId, request.tableId, request.year, request.divisionId}
-                : new Object[]{request.projectId, request.tableId, request.year, request.divisionId, request.schoolId};
+        String sql = buildSqlWithFilters(request, answerTable, userAnswer, type.hasTimesColumn());
+        Object[] args = buildArgs(request, userAnswer);
         List<Map<String, Object>> rows = jdbc.queryForList(sql, args);
 
         PrototypeFileReaders.AnswerCsvLoadResult loadResult = new PrototypeFileReaders.AnswerCsvLoadResult();
@@ -72,6 +70,54 @@ public class DbRuleExecutionDataLoader {
         AnswerTableType type = AnswerTableType.fromTableId(tableId);
         return buildSql(answerTable, type.isUserAnswer(), type.hasTimesColumn());
     }
+
+    private String buildSqlWithFilters(Request request, String answerTable, boolean userAnswer, boolean hasTimesColumn) {
+        if (userAnswer) {
+            return "SELECT a.id, a.question_id, a.option_id, a.code, a.content, a.project_id, a.table_id, " +
+                    "NULL AS times, a.year, a.del_flag " +
+                    "FROM " + answerTable + " a " +
+                    "WHERE a.project_id=? AND a.table_id=? AND a.year=? AND a.del_flag='0' " +
+                    "AND EXISTS (SELECT 1 FROM bus_user_answer_log l WHERE l.project_id=a.project_id " +
+                    "AND l.table_id=a.table_id AND l.year=a.year AND l.code=CAST(a.code AS CHAR) " +
+                    "AND l.division_id=? AND l.del_flag='0') " +
+                    "ORDER BY a.code, a.question_id, a.id";
+        }
+        String timesSelect = hasTimesColumn ? "a.times" : "NULL AS times";
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT a.id, a.question_id, a.option_id, a.student_id, a.content, a.project_id, a.table_id, ");
+        sql.append(timesSelect).append(", a.year, a.del_flag, s.student_name ");
+        sql.append("FROM ").append(answerTable).append(" a ");
+        sql.append("JOIN bus_student s ON s.student_id=a.student_id ");
+        sql.append("WHERE a.project_id=? AND a.table_id=? AND a.year=? AND a.del_flag='0' ");
+        sql.append("AND s.division_id=? AND s.school_id=? AND s.del_flag='0' ");
+        if (notBlank(request.grade)) {
+            sql.append("AND s.grade=? ");
+        }
+        if (notBlank(request.studentClass)) {
+            sql.append("AND s.student_class=? ");
+        }
+        sql.append("ORDER BY a.student_id, a.question_id, a.id");
+        return sql.toString();
+    }
+
+    private Object[] buildArgs(Request request, boolean userAnswer) {
+        if (userAnswer) {
+            return new Object[]{request.projectId, request.tableId, request.year, request.divisionId};
+        }
+        if (!notBlank(request.grade) && !notBlank(request.studentClass)) {
+            return new Object[]{request.projectId, request.tableId, request.year,
+                    request.divisionId, request.schoolId};
+        }
+        if (notBlank(request.grade) && notBlank(request.studentClass)) {
+            return new Object[]{request.projectId, request.tableId, request.year,
+                    request.divisionId, request.schoolId, request.grade, request.studentClass};
+        }
+        // only grade, no class
+        return new Object[]{request.projectId, request.tableId, request.year,
+                request.divisionId, request.schoolId, request.grade};
+    }
+
+    private static boolean notBlank(String s) { return s != null && !s.trim().isEmpty(); }
 
     private static String buildSql(String answerTable, boolean userAnswer, boolean hasTimesColumn) {
         if (userAnswer) {
@@ -125,6 +171,8 @@ public class DbRuleExecutionDataLoader {
         public long schoolId;
         public String year;
         public String source;
+        public String grade;
+        public String studentClass;
 
         public void validate() {
             if (scriptId <= 0) throw new IllegalArgumentException("scriptId 必填");

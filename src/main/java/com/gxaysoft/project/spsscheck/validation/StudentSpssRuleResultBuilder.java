@@ -3,6 +3,7 @@ package com.gxaysoft.project.spsscheck.validation;
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
 import com.gxaysoft.project.spsscheck.model.RowContext;
 import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.model.RuleType;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -103,11 +104,28 @@ public final class StudentSpssRuleResultBuilder {
         int sortNo = 0;
         for (Rule rule : rules) {
             sortNo++;
-            if (rule == null || !rule.isCheckRule()) continue;
+            if (rule == null) continue;
+            // 按 isCheckRule 标志 OR 校验类 RuleType 双重判断
+            if (!rule.isCheckRule() && !isCheckType(rule.getType())) continue;
             result.add(new RuleView(String.format("R%03d", sortNo), rule.getTarget(), description(rule),
                     rule.getSourceVariables(), rule.getSpssSource()));
         }
         return result;
+    }
+
+    private static boolean isCheckType(RuleType type) {
+        if (type == null) return false;
+        switch (type) {
+            case IDENTITY_CHECK:
+            case MISSING_CHECK:
+            case CONSISTENCY_CHECK:
+            case RANGE_CHECK:
+            case DOCUMENT_CHECK:
+            case OUTCOME_DETERMINATION:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static String description(Rule rule) {
