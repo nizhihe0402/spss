@@ -1,9 +1,13 @@
 package com.gxaysoft.project.spsscheck;
 
+import com.gxaysoft.project.spsscheck.engine.model.DatasetRule;
+import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.model.RuleType;
+import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
 import com.gxaysoft.project.spsscheck.model.*;
-import com.gxaysoft.project.spsscheck.v1.model.*;
-import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
 import com.gxaysoft.project.spsscheck.persistence.*;
 
 import java.nio.file.*;
@@ -54,9 +58,10 @@ public class SpsUploadToDb {
                 String spsText = PrototypeFileReaders.readSpssText(spsFile);
 
                 // Parse
-                List<SpssCheckRule> rules = SpssRuleParser.parseRules(spsText);
-                List<SpssDatasetRule> datasetRules = SpssRuleParser.parseDatasetRules(spsText);
-                List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
+                ParsedScript parsed = SpssParser.parse(spsText);
+                List<Rule> rules = parsed.getRules();
+                List<DatasetRule> datasetRules = parsed.getDatasetRules();
+                List<OutputRule> outputRules = parsed.getOutputRules();
 
                 long tableId = ScriptQuestionMappingService.inferTableIdFromScriptName(spsName);
 
@@ -71,24 +76,24 @@ public class SpsUploadToDb {
 
                 // Insert check rules + steps
                 int sortNo = 0;
-                for (SpssCheckRule rule : rules) {
+                for (Rule rule : rules) {
                     sortNo++;
                     repo.insertRule(scriptId, sortNo, rule);
                 }
 
                 // Insert dataset rules as special ROW_CHECK rules
-                for (SpssDatasetRule dr : datasetRules) {
+                for (DatasetRule dr : datasetRules) {
                     sortNo++;
-                    String target = dr.getFirstVariable();
-                    SpssCheckRule wrapper = new SpssCheckRule(target, "",
-                            "去重标记", java.util.Collections.singletonList(dr.getByVariable()),
-                            true, dr.getSpssSource(), dr.getJavaRule());
+                    Rule wrapper = new Rule(dr.getFirstVariable(), RuleType.DUPLICATE_MARK,
+                            dr.getSpssSource(), java.util.Collections.singletonList(dr.getByVariable()));
+                    wrapper.setCheckRule(true);
+                    wrapper.setJavaPreview(dr.getJavaRule());
                     repo.insertRule(scriptId, sortNo, wrapper);
                 }
 
                 // Insert output rules
                 int outNo = 0;
-                for (SpssOutputRule or : outputRules) {
+                for (OutputRule or : outputRules) {
                     outNo++;
                     repo.insertOutputRule(scriptId, outNo, or);
                 }

@@ -1,10 +1,10 @@
 package com.gxaysoft.project.spsscheck.web;
 
-import com.gxaysoft.project.spsscheck.v2.model.RuleDefinition;
-import com.gxaysoft.project.spsscheck.v2.model.RuleType;
-import com.gxaysoft.project.spsscheck.v2.parser.BlockParser;
-import com.gxaysoft.project.spsscheck.v1.model.SpssOutputRule;
-import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
+import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.model.RuleType;
+import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.persistence.SpsRepository;
 import com.gxaysoft.project.spsscheck.persistence.ScriptQuestionMappingService;
 import com.gxaysoft.project.spsscheck.persistence.RuleCorrectionPlan;
@@ -43,9 +43,10 @@ public class UploadController {
             String name = extractScriptName(spsText, file.getOriginalFilename());
             long scriptTableId = resolveScriptTableId(tableId, tableId2, name);
 
-            // V2: Block-based parsing
-            List<RuleDefinition> rules = BlockParser.parse(spsText);
-            List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
+            // Engine: unified parsing
+            ParsedScript parsed = SpssParser.parse(spsText);
+            List<Rule> rules = parsed.getRules();
+            List<OutputRule> outputRules = parsed.getOutputRules();
 
             // Insert script
             KeyHolder keyHolder = new GeneratedKeyHolder();
@@ -62,15 +63,15 @@ public class UploadController {
             long scriptId = keyHolder.getKey().longValue();
             insertScriptQuestionMappings(scriptId, scriptTableId);
 
-            // Insert rules (V2)
+            // Insert rules
             int sortNo = 0;
-            for (RuleDefinition rd : rules) {
+            for (Rule rd : rules) {
                 sortNo++;
                 insertRuleV2(scriptId, sortNo, rd);
             }
             // Insert output rules
             int outNo = 0;
-            for (SpssOutputRule or : outputRules) {
+            for (OutputRule or : outputRules) {
                 outNo++;
                 insertOutputRule(scriptId, outNo, or);
             }
@@ -95,32 +96,35 @@ public class UploadController {
         return result;
     }
 
-    private void insertRuleV2(long scriptId, int sortNo, RuleDefinition rd) {
+    private void insertRuleV2(long scriptId, int sortNo, Rule rd) {
         String code = String.format("R%03d", sortNo);
         String sources = String.join(",", rd.getSourceVariables());
         String sourceQuestionMappings = new SourceQuestionMappingSyncService(jdbc).buildForSources(sources, loadScriptTableId(scriptId));
+        RuleType rt = rd.getType() != null ? rd.getType() : RuleType.CONDITIONAL_BLOCK;
         RuleCorrectionPlan correction = RuleCorrectionPlan.detect(
-                rd.getType().name(), rd.getTarget(), sources, rd.getDescription());
+                rt.name(), rd.getTarget(), sources, rd.getDescription());
+        String spssSource = rd.getSpssSource() != null ? rd.getSpssSource() : "";
+        String javaPreview = rd.getJavaPreview() != null ? rd.getJavaPreview() : "";
         jdbc.update(
             "INSERT INTO sps_rule (script_id, rule_code, rule_name, rule_type, target_variable, " +
             "source_variables, source_question_mappings, correction_enabled, correction_type, correction_variables, " +
             "correction_source, correction_strategy, correction_apply_stage, correction_write_clean, " +
             "correction_write_source, correction_description, spss_source, rule_json, java_preview, sort_no, affect_clean, warning_message) " +
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            scriptId, code, rd.getTarget(), rd.getType().name(),
+            scriptId, code, rd.getTarget(), rt.name(),
             rd.getTarget(), sources, sourceQuestionMappings,
             correction.enabled ? 1 : 0, correction.type, correction.variables,
             correction.source, correction.strategy, correction.applyStage,
             correction.writeClean ? 1 : 0, correction.writeSource ? 1 : 0,
             correction.description,
-            truncate(rd.getSpssBlock(), 65535),
-            "{\"v2\":true,\"type\":\"" + rd.getType().name() + "\"}",
-            rd.getJavaPreview(), sortNo,
-            rd.getType() == RuleType.IDENTITY_CHECK
-                    || rd.getType() == RuleType.MISSING_CHECK
-                    || rd.getType() == RuleType.RANGE_CHECK
-                    || rd.getType() == RuleType.CONSISTENCY_CHECK
-                    || rd.getType() == RuleType.DOCUMENT_CHECK ? 1 : 0,
+            truncate(spssSource, 65535),
+            "{\"v2\":true,\"type\":\"" + rt.name() + "\"}",
+            javaPreview, sortNo,
+            rt == RuleType.IDENTITY_CHECK
+                    || rt == RuleType.MISSING_CHECK
+                    || rt == RuleType.RANGE_CHECK
+                    || rt == RuleType.CONSISTENCY_CHECK
+                    || rt == RuleType.DOCUMENT_CHECK ? 1 : 0,
             rd.getDescription());
     }
 
@@ -148,7 +152,7 @@ public class UploadController {
         }
     }
 
-    private void insertOutputRule(long scriptId, int sortNo, SpssOutputRule or) {
+    private void insertOutputRule(long scriptId, int sortNo, OutputRule or) {
         String code = String.format("O%03d", sortNo);
         String type = or.getSheetName().contains("清理后") ? "CLEAN_DATA" : "ERROR_GROUP";
         jdbc.update("INSERT INTO sps_output_rule (script_id, output_code, output_name, output_type, " +

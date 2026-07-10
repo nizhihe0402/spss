@@ -1,17 +1,26 @@
 package com.gxaysoft.project.spsscheck;
 
-import com.gxaysoft.project.spsscheck.v1.executor.RuleAvailabilityChecker;
-import com.gxaysoft.project.spsscheck.v1.executor.RuleEngine;
+import com.gxaysoft.project.spsscheck.engine.executor.AvailabilityChecker;
+import com.gxaysoft.project.spsscheck.engine.executor.RuleExecutor;
+import com.gxaysoft.project.spsscheck.engine.model.DatasetRule;
+import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.model.Step;
+import com.gxaysoft.project.spsscheck.engine.model.StepAction;
+import com.gxaysoft.project.spsscheck.engine.model.ComputeAction;
+import com.gxaysoft.project.spsscheck.engine.model.RecodeAction;
+import com.gxaysoft.project.spsscheck.engine.model.IfAssignAction;
+import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.io.AnswerPivot;
 import com.gxaysoft.project.spsscheck.io.OutputWriter;
 import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
 import com.gxaysoft.project.spsscheck.io.StudentInfoLoader;
 import com.gxaysoft.project.spsscheck.io.TableIdDetector;
 import com.gxaysoft.project.spsscheck.model.*;
-import com.gxaysoft.project.spsscheck.v1.model.*;
 import com.gxaysoft.project.spsscheck.parser.QuestionJsonParser;
 import com.gxaysoft.project.spsscheck.parser.QuestionSqlParser;
-import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
+import com.gxaysoft.project.spsscheck.parser.SpssUtil;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -89,9 +98,10 @@ public class SpsUploadSimulator {
 
         // ── Parse SPS ──
         String spsText = PrototypeFileReaders.readSpssText(spsFile);
-        List<SpssCheckRule> rules = SpssRuleParser.parseRules(spsText);
-        List<SpssDatasetRule> datasetRules = SpssRuleParser.parseDatasetRules(spsText);
-        List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
+        ParsedScript parsed = SpssParser.parse(spsText);
+        List<Rule> rules = parsed.getRules();
+        List<DatasetRule> datasetRules = parsed.getDatasetRules();
+        List<OutputRule> outputRules = parsed.getOutputRules();
 
         result.totalRules = rules.size();
         result.totalDatasetRules = datasetRules.size();
@@ -150,21 +160,23 @@ public class SpsUploadSimulator {
         }
 
         // ── Execute rules ──
-        RuleEngine.execute(rows, rules);
-        for (SpssDatasetRule dr : datasetRules) {
+        RuleExecutor.execute(rows, rules);
+        for (DatasetRule dr : datasetRules) {
             dr.execute(rows);
         }
 
         // ── Availability check ──
-        List<RuleAvailability> availability = RuleAvailabilityChecker.check(rules, datasetRules, mappings);
-        result.executableRules = availability.stream().filter(RuleAvailability::isExecutable).count();
-        result.unexecutableRules = result.totalRules - result.executableRules;
-
-        for (RuleAvailability a : availability) {
-            if (!a.isExecutable()) {
-                result.failedRules.add(a.getRule().getTarget() + " missing=" + a.getMissingVariables());
-            }
+        java.util.Set<String> dbColumns = new java.util.LinkedHashSet<String>();
+        for (String variable : mappings.keySet()) {
+            dbColumns.add(SpssUtil.normalize(variable));
         }
+        AvailabilityChecker checker = new AvailabilityChecker(dbColumns);
+        for (DatasetRule dr : datasetRules) {
+            checker.addDatasetVariables(dr.getFirstVariable(), dr.getLastVariable());
+        }
+        List<Rule> availableRuleList = checker.filterAvailable(rules);
+        result.executableRules = availableRuleList.size();
+        result.unexecutableRules = result.totalRules - result.executableRules;
 
         System.out.printf("  Execute: %d/%d rules executable%n", result.executableRules, result.totalRules);
 
@@ -222,9 +234,9 @@ public class SpsUploadSimulator {
     // ── Parse report: simulates sps_script + sps_rule + sps_rule_step tables ──
 
     private static void writeParseReport(Path runDir, String spsName,
-                                         List<SpssCheckRule> rules,
-                                         List<SpssDatasetRule> datasetRules,
-                                         List<SpssOutputRule> outputRules,
+                                         List<Rule> rules,
+                                         List<DatasetRule> datasetRules,
+                                         List<OutputRule> outputRules,
                                          SpsRunResult result) throws IOException {
         Path reportDir = runDir.resolve(spsName + "-parse");
         Files.createDirectories(reportDir);
@@ -245,16 +257,19 @@ public class SpsUploadSimulator {
             w.print('﻿');
             w.println("rule_code,target_variable,rule_type,source_variables,step_count,label,spss_source_size,java_preview");
             int idx = 0;
-            for (SpssCheckRule rule : rules) {
+            for (Rule rule : rules) {
                 String code = spsName + "-R" + String.format("%03d", ++idx);
+                String label = rule.getDescription() != null ? rule.getDescription() : rule.getTarget();
+                String javaPreview = rule.getJavaPreview() != null ? rule.getJavaPreview() : "";
+                String spssSource = rule.getSpssSource() != null ? rule.getSpssSource() : "";
                 w.printf("%s,%s,%s,\"%s\",%d,\"%s\",%d,\"%s\"%n",
                         code, rule.getTarget(),
                         rule.isCheckRule() ? "ROW_CHECK" : "COMPUTE",
                         String.join(";", rule.getSourceVariables()),
                         rule.getSteps().size(),
-                        rule.getLabel() != null ? rule.getLabel().replace("\"", "\"\"") : "",
-                        rule.getSpssSource().length(),
-                        rule.getJavaRule().replace("\"", "\"\""));
+                        label.replace("\"", "\"\""),
+                        spssSource.length(),
+                        javaPreview.replace("\"", "\"\""));
             }
         }
 
@@ -264,27 +279,36 @@ public class SpsUploadSimulator {
             w.print('﻿');
             w.println("rule_code,step_no,step_type,source,target,condition,expression");
             int ruleIdx = 0;
-            for (SpssCheckRule rule : rules) {
+            for (Rule rule : rules) {
                 ruleIdx++;
                 String code = spsName + "-R" + String.format("%03d", ruleIdx);
                 int stepNo = 0;
-                for (RuleStep step : rule.getSteps()) {
+                for (Step step : rule.getSteps()) {
+                    if (step == null) continue;
                     stepNo++;
-                    String type = step.getClass().getSimpleName().replace("RuleStep", "").toUpperCase();
-                    String source = "", target = "", condition = "", expression = "";
-                    if (step instanceof ComputeRuleStep) {
-                        ComputeRuleStep cs = (ComputeRuleStep) step;
-                        source = ""; target = cs.getTarget(); expression = cs.getExpression();
-                    } else if (step instanceof RecodeRuleStep) {
-                        RecodeRuleStep rs = (RecodeRuleStep) step;
-                        source = rs.sourceVariables().get(0); target = "";
-                    } else if (step instanceof IfAssignRuleStep) {
-                        IfAssignRuleStep is = (IfAssignRuleStep) step;
-                        condition = ""; target = ""; expression = "";
-                    } else if (step instanceof ConditionalRuleStep) {
-                        ConditionalRuleStep cs = (ConditionalRuleStep) step;
-                        condition = ""; // extract from javaRule
+                    String type = "";
+                    String source = "", target = "", condition = step.getCondition();
+                    String expression = "";
+                    StepAction action = step.getAction();
+                    if (action instanceof ComputeAction) {
+                        ComputeAction ca = (ComputeAction) action;
+                        type = "COMPUTE";
+                        target = ca.target();
+                        expression = ca.getExpression();
+                    } else if (action instanceof RecodeAction) {
+                        RecodeAction ra = (RecodeAction) action;
+                        type = "RECODE";
+                        source = ra.getSource();
+                        target = ra.target();
+                    } else if (action instanceof IfAssignAction) {
+                        IfAssignAction ia = (IfAssignAction) action;
+                        type = "IF_ASSIGN";
+                        target = ia.target();
+                        expression = ia.getValue();
                     }
+                    if (type.isEmpty()) type = action.getClass().getSimpleName().toUpperCase();
+                    if (condition == null) condition = "";
+                    if (expression == null) expression = "";
                     w.printf("%s,%d,%s,%s,%s,\"%s\",\"%s\"%n",
                             code, stepNo, type, source, target,
                             condition.replace("\"", "\"\""), expression.replace("\"", "\"\""));
@@ -298,7 +322,7 @@ public class SpsUploadSimulator {
             w.print('﻿');
             w.println("output_code,output_name,output_type,select_condition,spss_source_size");
             int idx = 0;
-            for (SpssOutputRule or : outputRules) {
+            for (OutputRule or : outputRules) {
                 String code = spsName + "-O" + String.format("%03d", ++idx);
                 String type = or.getSheetName().contains("清理后") ? "CLEAN_DATA" : "ERROR_GROUP";
                 w.printf("%s,\"%s\",%s,\"%s\",%d%n",
@@ -327,7 +351,7 @@ public class SpsUploadSimulator {
     // ── Execution report: simulates sps_check_error_detail + run batch ──
 
     private static void writeExecutionReport(Path runDir, String spsName,
-                                             List<SpssOutputRule> outputRules,
+                                             List<OutputRule> outputRules,
                                              List<RowContext> rows,
                                              SpsRunResult result) throws IOException {
         Path reportDir = runDir.resolve(spsName + "-parse");
@@ -339,7 +363,7 @@ public class SpsUploadSimulator {
                 reportDir.resolve("sps_run_batch.csv"), StandardCharsets.UTF_8))) {
             w.print('﻿');
             w.println("table_code,table_id,total_rows,clean_rows,error_rows,executable_rules,total_rules,status");
-            for (SpssOutputRule or : outputRules) {
+            for (OutputRule or : outputRules) {
                 int count = 0;
                 for (RowContext row : rows) {
                     if (or.matches(row)) count++;
@@ -359,7 +383,7 @@ public class SpsUploadSimulator {
                 reportDir.resolve("sps_check_error_detail.csv"), StandardCharsets.UTF_8))) {
             w.print('﻿');
             w.println("run_batch,row_key,rule_name,output_name,field_values");
-            for (SpssOutputRule or : outputRules) {
+            for (OutputRule or : outputRules) {
                 if (or.getSheetName().contains("清理后")) continue;
                 for (RowContext row : rows) {
                     if (or.matches(row)) {

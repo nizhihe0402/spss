@@ -4,7 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
-import com.gxaysoft.project.spsscheck.v2.model.RuleType;
+import com.gxaysoft.project.spsscheck.engine.model.RuleType;
 import com.gxaysoft.project.spsscheck.persistence.SourceQuestionMappingSyncService;
 
 import java.util.*;

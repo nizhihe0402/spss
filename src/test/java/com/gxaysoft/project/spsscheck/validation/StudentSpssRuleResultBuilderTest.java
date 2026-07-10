@@ -1,8 +1,9 @@
 package com.gxaysoft.project.spsscheck.validation;
 
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.model.RuleType;
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
 import com.gxaysoft.project.spsscheck.model.RowContext;
-import com.gxaysoft.project.spsscheck.v1.model.SpssCheckRule;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -16,12 +17,17 @@ class StudentSpssRuleResultBuilderTest {
 
     @Test
     void usesFullRuleListNumbersSoResultCodesMatchRuleListCodes() {
-        SpssCheckRule compute = new SpssCheckRule("MID", "A+B", "compute", Collections.<String>emptyList(),
-                false, "", "");
-        SpssCheckRule checkA = new SpssCheckRule("CHECK_A", "", "check A", Collections.<String>emptyList(),
-                true, "", "");
-        SpssCheckRule checkB = new SpssCheckRule("CHECK_B", "", "check B", Collections.singletonList("SRC_B"),
-                true, "RECODE SRC_B (4 thru 6=0) (SYSMIS=1) (ELSE=1) INTO CHECK_B.", "");
+        Rule compute = new Rule("MID", RuleType.COMPUTE_INTERMEDIATE, "", Collections.<String>emptyList());
+        compute.setExpression("A+B");
+        compute.setDescription("compute");
+        Rule checkA = new Rule("CHECK_A", RuleType.IDENTITY_CHECK, "", Collections.<String>emptyList());
+        checkA.setCheckRule(true);
+        checkA.setDescription("check A");
+        Rule checkB = new Rule("CHECK_B", RuleType.IDENTITY_CHECK,
+                "RECODE SRC_B (4 thru 6=0) (SYSMIS=1) (ELSE=1) INTO CHECK_B.",
+                Collections.singletonList("SRC_B"));
+        checkB.setCheckRule(true);
+        checkB.setDescription("check B");
 
         RowContext row = new RowContext("1001");
         row.putFlag("CHECK_A", 0);

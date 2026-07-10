@@ -1,9 +1,8 @@
 package com.gxaysoft.project.spsscheck;
 
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
-import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
 import com.gxaysoft.project.spsscheck.model.*;
-import com.gxaysoft.project.spsscheck.v1.model.*;
 
 import java.nio.file.*;
 import java.util.*;

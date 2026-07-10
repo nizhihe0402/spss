@@ -1,7 +1,7 @@
 package com.gxaysoft.project.spsscheck.io;
 
 import com.gxaysoft.project.spsscheck.model.RowContext;
-import com.gxaysoft.project.spsscheck.v1.model.SpssOutputRule;
+import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -19,13 +19,13 @@ public final class OutputWriter {
     private OutputWriter() {
     }
 
-    public static void writeOutputs(Path outputDir, List<RowContext> rows, List<SpssOutputRule> outputRules) throws IOException {
+    public static void writeOutputs(Path outputDir, List<RowContext> rows, List<OutputRule> outputRules) throws IOException {
         Files.createDirectories(outputDir);
 
         // Sort: ERROR_GROUP before CLEAN_DATA (clean output depends on all error flags)
-        List<SpssOutputRule> sorted = new ArrayList<>(outputRules);
-        Collections.sort(sorted, new Comparator<SpssOutputRule>() {
-            public int compare(SpssOutputRule a, SpssOutputRule b) {
+        List<OutputRule> sorted = new ArrayList<>(outputRules);
+        Collections.sort(sorted, new Comparator<OutputRule>() {
+            public int compare(OutputRule a, OutputRule b) {
                 boolean aClean = a.getSheetName().contains("清理后");
                 boolean bClean = b.getSheetName().contains("清理后");
                 if (aClean == bClean) return 0;
@@ -33,7 +33,7 @@ public final class OutputWriter {
             }
         });
 
-        for (SpssOutputRule rule : sorted) {
+        for (OutputRule rule : sorted) {
             List<RowContext> matched = new ArrayList<>();
             for (RowContext row : rows) {
                 if (rule.matches(row)) {

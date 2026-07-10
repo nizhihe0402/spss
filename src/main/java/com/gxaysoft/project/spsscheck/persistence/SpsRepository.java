@@ -1,7 +1,7 @@
 package com.gxaysoft.project.spsscheck.persistence;
 
+import com.gxaysoft.project.spsscheck.engine.model.*;
 import com.gxaysoft.project.spsscheck.model.*;
-import com.gxaysoft.project.spsscheck.v1.model.*;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -34,7 +34,7 @@ public class SpsRepository {
 
     // ── sps_rule ────────────────────────────────────────────────
 
-    public void insertRule(long scriptId, int sortNo, SpssCheckRule rule) throws SQLException {
+    public void insertRule(long scriptId, int sortNo, Rule rule) throws SQLException {
         String sources = String.join(",", rule.getSourceVariables());
         RuleCorrectionPlan correction = RuleCorrectionPlan.detect(
                 rule.isCheckRule() ? "ROW_CHECK" : "COMPUTE",
@@ -46,9 +46,10 @@ public class SpsRepository {
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             String ruleCode = String.format("R%03d", sortNo);
+            String label = rule.getDescription() != null ? rule.getDescription() : rule.getTarget();
             ps.setLong(1, scriptId);
             ps.setString(2, ruleCode);
-            ps.setString(3, rule.getLabel());
+            ps.setString(3, label);
             ps.setString(4, rule.isCheckRule() ? "ROW_CHECK" : "COMPUTE");
             ps.setString(5, rule.getTarget());
             ps.setString(6, sources);
@@ -61,10 +62,10 @@ public class SpsRepository {
             ps.setInt(13, correction.writeClean ? 1 : 0);
             ps.setInt(14, correction.writeSource ? 1 : 0);
             ps.setString(15, correction.description);
-            ps.setString(16, rule.getSpssSource().length() > 65535
-                    ? rule.getSpssSource().substring(0, 65535) : rule.getSpssSource());
+            String spssSource = rule.getSpssSource() != null ? rule.getSpssSource() : "";
+            ps.setString(16, spssSource.length() > 65535 ? spssSource.substring(0, 65535) : spssSource);
             ps.setString(17, buildRuleJson(rule));
-            ps.setString(18, rule.getJavaRule());
+            ps.setString(18, rule.getJavaPreview() != null ? rule.getJavaPreview() : "");
             ps.setInt(19, sortNo);
             ps.setInt(20, rule.isCheckRule() ? 1 : 0);
             ps.setString(21, rule.getDescription());
@@ -103,44 +104,37 @@ public class SpsRepository {
         }
     }
 
-    private void insertRuleSteps(long ruleId, SpssCheckRule rule) throws SQLException {
-        List<RuleStep> steps = rule.getSteps();
+    private void insertRuleSteps(long ruleId, Rule rule) throws SQLException {
+        List<Step> steps = rule.getSteps();
         if (steps.isEmpty()) {
             // Single-step compute: create one synthetic step
-            insertStep(ruleId, 1, "COMPUTE", null, null, rule.getTarget(), rule.getExpression(), null, null);
+            insertStep(ruleId, 1, "COMPUTE", null, null, rule.getTarget(),
+                    rule.getExpression() != null ? rule.getExpression() : "", null, null);
             return;
         }
         int stepNo = 0;
-        for (RuleStep step : steps) {
+        for (Step step : steps) {
             stepNo++;
-            insertStepFrom(ruleId, stepNo, step);
-        }
-    }
+            if (step == null) continue;
+            String condition = step.getCondition();
+            StepAction action = step.getAction();
+            if (action == null) continue;
 
-    private void insertStepFrom(long ruleId, int stepNo, RuleStep step) throws SQLException {
-        if (step instanceof ConditionalRuleStep) {
-            ConditionalRuleStep cs = (ConditionalRuleStep) step;
-            // First insert the condition wrapper, then recurse into delegate
-            insertConditionalStep(ruleId, stepNo, cs);
-        } else if (step instanceof ComputeRuleStep) {
-            ComputeRuleStep cs = (ComputeRuleStep) step;
-            insertStep(ruleId, stepNo, "COMPUTE", null, null, cs.getTarget(), cs.getExpression(), null, null);
-        } else if (step instanceof RecodeRuleStep) {
-            RecodeRuleStep rs = (RecodeRuleStep) step;
-            String recodeJson = buildRecodeJson(rs);
-            insertStep(ruleId, stepNo, "RECODE", null, rs.sourceVariables().isEmpty() ? "" : rs.sourceVariables().get(0),
-                    null, null, null, recodeJson);
-        } else if (step instanceof IfAssignRuleStep) {
-            IfAssignRuleStep is = (IfAssignRuleStep) step;
-            insertStep(ruleId, stepNo, "IF_ASSIGN", null, null, null, null, null, null);
+            if (action instanceof ComputeAction) {
+                ComputeAction ca = (ComputeAction) action;
+                insertStep(ruleId, stepNo, "COMPUTE", condition, null,
+                        ca.target(), ca.getExpression(), null, null);
+            } else if (action instanceof RecodeAction) {
+                RecodeAction ra = (RecodeAction) action;
+                String recodeJson = buildRecodeJson(ra);
+                insertStep(ruleId, stepNo, "RECODE", condition, ra.getSource(),
+                        null, null, null, recodeJson);
+            } else if (action instanceof IfAssignAction) {
+                IfAssignAction ia = (IfAssignAction) action;
+                insertStep(ruleId, stepNo, "IF_ASSIGN", condition, null,
+                        ia.target(), null, ia.getValue(), null);
+            }
         }
-    }
-
-    private void insertConditionalStep(long ruleId, int stepNo, ConditionalRuleStep cs) throws SQLException {
-        // Insert the condition wrapper
-        insertStep(ruleId, stepNo, "CONDITIONAL", extractConditionText(cs), null, null, null, null, null);
-        // Insert the delegate as stepNo+1
-        insertStepFrom(ruleId, stepNo + 1, getDelegate(cs));
     }
 
     private void insertStep(long ruleId, int stepNo, String stepType, String condition,
@@ -165,7 +159,7 @@ public class SpsRepository {
 
     // ── sps_output_rule ─────────────────────────────────────────
 
-    public void insertOutputRule(long scriptId, int sortNo, SpssOutputRule rule) throws SQLException {
+    public void insertOutputRule(long scriptId, int sortNo, OutputRule rule) throws SQLException {
         String sql = "INSERT INTO sps_output_rule (script_id, output_code, output_name, output_type, " +
                 "select_condition, spss_source, java_preview, sort_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -196,17 +190,19 @@ public class SpsRepository {
 
     // ── JSON builders ───────────────────────────────────────────
 
-    private String buildRuleJson(SpssCheckRule rule) {
+    private String buildRuleJson(Rule rule) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\"type\":\"").append(rule.isCheckRule() ? "ROW_CHECK" : "COMPUTE").append("\"");
         sb.append(",\"target\":\"").append(jsonEscape(rule.getTarget())).append("\"");
-        if (!rule.getExpression().isEmpty()) {
-            sb.append(",\"expression\":\"").append(jsonEscape(rule.getExpression())).append("\"");
+        String expression = rule.getExpression();
+        if (expression != null && !expression.isEmpty()) {
+            sb.append(",\"expression\":\"").append(jsonEscape(expression)).append("\"");
         }
         if (!rule.getSteps().isEmpty()) {
             sb.append(",\"steps\":[");
             boolean first = true;
-            for (RuleStep step : rule.getSteps()) {
+            for (Step step : rule.getSteps()) {
+                if (step == null) continue;
                 if (!first) sb.append(",");
                 sb.append(stepToJson(step));
                 first = false;
@@ -217,51 +213,50 @@ public class SpsRepository {
         return sb.toString();
     }
 
-    private String stepToJson(RuleStep step) {
-        if (step instanceof ConditionalRuleStep) {
-            ConditionalRuleStep cs = (ConditionalRuleStep) step;
-            return "{\"type\":\"CONDITIONAL\",\"condition\":\"" + jsonEscape(extractConditionText(cs))
-                    + "\",\"step\":" + stepToJson(getDelegate(cs)) + "}";
-        }
-        if (step instanceof ComputeRuleStep) {
-            ComputeRuleStep cs = (ComputeRuleStep) step;
-            return "{\"type\":\"COMPUTE\",\"target\":\"" + jsonEscape(cs.getTarget())
-                    + "\",\"expression\":\"" + jsonEscape(cs.getExpression()) + "\"}";
-        }
-        if (step instanceof RecodeRuleStep) {
-            return buildRecodeJson((RecodeRuleStep) step);
-        }
-        if (step instanceof IfAssignRuleStep) {
-            return "{\"type\":\"IF_ASSIGN\"}";
-        }
-        return "{}";
-    }
+    private String stepToJson(Step step) {
+        if (step == null) return "{}";
+        StringBuilder sb = new StringBuilder();
+        String condition = step.getCondition();
+        StepAction action = step.getAction();
 
-    private String buildRecodeJson(RecodeRuleStep rs) {
-        StringBuilder sb = new StringBuilder("{\"type\":\"RECODE\",\"source\":\"");
-        List<String> sv = rs.sourceVariables();
-        sb.append(sv.isEmpty() ? "" : jsonEscape(sv.get(0)));
-        sb.append("\",\"cases\":[");
-        // Cases are embedded in the step — just record it's a recode step
-        sb.append("]}");
+        if (action instanceof ComputeAction) {
+            ComputeAction ca = (ComputeAction) action;
+            sb.append("{\"type\":\"COMPUTE\",\"target\":\"").append(jsonEscape(ca.target()))
+                    .append("\",\"expression\":\"").append(jsonEscape(ca.getExpression())).append("\"");
+            if (condition != null) {
+                sb.append(",\"condition\":\"").append(jsonEscape(condition)).append("\"");
+            }
+            sb.append("}");
+        } else if (action instanceof RecodeAction) {
+            RecodeAction ra = (RecodeAction) action;
+            sb.append("{\"type\":\"RECODE\",\"source\":\"").append(jsonEscape(ra.getSource()))
+                    .append("\",\"target\":\"").append(jsonEscape(ra.target())).append("\"");
+            if (condition != null) {
+                sb.append(",\"condition\":\"").append(jsonEscape(condition)).append("\"");
+            }
+            sb.append("}");
+        } else if (action instanceof IfAssignAction) {
+            IfAssignAction ia = (IfAssignAction) action;
+            sb.append("{\"type\":\"IF_ASSIGN\",\"target\":\"").append(jsonEscape(ia.target()))
+                    .append("\",\"value\":\"").append(jsonEscape(ia.getValue())).append("\"");
+            if (condition != null) {
+                sb.append(",\"condition\":\"").append(jsonEscape(condition)).append("\"");
+            }
+            sb.append("}");
+        } else {
+            sb.append("{}");
+        }
         return sb.toString();
     }
 
-    private String extractConditionText(ConditionalRuleStep cs) {
-        String jr = cs.javaRule();
-        int start = jr.indexOf("\"") + 1;
-        int end = jr.indexOf("\"", start);
-        return end > start ? jr.substring(start, end) : "";
-    }
-
-    private RuleStep getDelegate(ConditionalRuleStep cs) {
-        try {
-            java.lang.reflect.Field f = ConditionalRuleStep.class.getDeclaredField("delegate");
-            f.setAccessible(true);
-            return (RuleStep) f.get(cs);
-        } catch (Exception e) {
-            return null;
-        }
+    private String buildRecodeJson(RecodeAction ra) {
+        StringBuilder sb = new StringBuilder("{\"type\":\"RECODE\",\"source\":\"");
+        sb.append(jsonEscape(ra.getSource()));
+        sb.append("\",\"target\":\"");
+        sb.append(jsonEscape(ra.target()));
+        sb.append("\",\"cases\":[");
+        sb.append("]}");
+        return sb.toString();
     }
 
     private static String jsonEscape(String s) {

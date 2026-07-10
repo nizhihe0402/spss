@@ -1,17 +1,21 @@
 package com.gxaysoft.project.spsscheck;
 
-import com.gxaysoft.project.spsscheck.v1.executor.RuleAvailabilityChecker;
-import com.gxaysoft.project.spsscheck.v1.executor.RuleEngine;
+import com.gxaysoft.project.spsscheck.engine.executor.AvailabilityChecker;
+import com.gxaysoft.project.spsscheck.engine.executor.RuleExecutor;
+import com.gxaysoft.project.spsscheck.engine.model.DatasetRule;
+import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.io.AnswerPivot;
 import com.gxaysoft.project.spsscheck.io.OutputWriter;
 import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
 import com.gxaysoft.project.spsscheck.io.StudentInfoLoader;
 import com.gxaysoft.project.spsscheck.io.TableIdDetector;
 import com.gxaysoft.project.spsscheck.model.*;
-import com.gxaysoft.project.spsscheck.v1.model.*;
 import com.gxaysoft.project.spsscheck.parser.QuestionJsonParser;
 import com.gxaysoft.project.spsscheck.parser.QuestionSqlParser;
-import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
+import com.gxaysoft.project.spsscheck.parser.SpssUtil;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -56,10 +60,10 @@ public class PrototypeCli {
             mappings.putAll(studentData.mappings);
         }
 
-        List<SpssCheckRule> rules = SpssRuleParser.parseRules(spsText);
-        List<SpssDatasetRule> datasetRules = SpssRuleParser.parseDatasetRules(spsText);
-        List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
-        List<RuleAvailability> availability = RuleAvailabilityChecker.check(rules, datasetRules, mappings);
+        ParsedScript parsed = SpssParser.parse(spsText);
+        List<Rule> rules = parsed.getRules();
+        List<DatasetRule> datasetRules = parsed.getDatasetRules();
+        List<OutputRule> outputRules = parsed.getOutputRules();
 
         List<RowContext> rows = AnswerPivot.pivot(answers, mappings);
 
@@ -67,10 +71,23 @@ public class PrototypeCli {
             StudentInfoLoader.enrichRows(rows, studentData.studentInfo);
         }
 
-        RuleEngine.execute(rows, rules);
-        for (SpssDatasetRule datasetRule : datasetRules) {
+        RuleExecutor.execute(rows, rules);
+        for (DatasetRule datasetRule : datasetRules) {
             datasetRule.execute(rows);
         }
+
+        // Availability check
+        java.util.Set<String> dbColumns = new java.util.LinkedHashSet<String>();
+        for (String variable : mappings.keySet()) {
+            dbColumns.add(SpssUtil.normalize(variable));
+        }
+        AvailabilityChecker checker = new AvailabilityChecker(dbColumns);
+        for (DatasetRule dr : datasetRules) {
+            checker.addDatasetVariables(dr.getFirstVariable(), dr.getLastVariable());
+        }
+        List<Rule> availableRules = checker.filterAvailable(rules);
+        int executable = availableRules.size();
+        int unexecutable = rules.size() - executable;
 
         System.out.println("tableId=" + tableId);
         System.out.println("answers=" + answers.size());
@@ -79,27 +96,14 @@ public class PrototypeCli {
         System.out.println("rules=" + rules.size());
         System.out.println("datasetRules=" + datasetRules.size());
         System.out.println("outputRules=" + outputRules.size());
-
-        int executable = 0;
-        List<String> failed = new ArrayList<>();
-        for (RuleAvailability item : availability) {
-            if (item.isExecutable()) {
-                executable++;
-            } else {
-                failed.add(item.getRule().getTarget() + " missing=" + item.getMissingVariables());
-            }
-        }
         System.out.println("executableRules=" + executable);
-        if (!failed.isEmpty()) {
-            System.out.println("failedRules:");
-            for (String line : failed) {
-                System.out.println("  " + line);
-            }
+        if (unexecutable > 0) {
+            System.out.println("unexecutableRules=" + unexecutable);
         }
 
         Path outputDir = args.length >= 5 ? Paths.get(args[4]) : Paths.get("output");
         System.out.println("outputs:");
-        for (SpssOutputRule outputRule : outputRules) {
+        for (OutputRule outputRule : outputRules) {
             int count = 0;
             for (RowContext row : rows) {
                 if (outputRule.matches(row)) {

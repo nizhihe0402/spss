@@ -2,7 +2,7 @@ package com.gxaysoft.project.spsscheck.validation;
 
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
 import com.gxaysoft.project.spsscheck.model.RowContext;
-import com.gxaysoft.project.spsscheck.v1.model.SpssCheckRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -17,7 +17,7 @@ public final class StudentSpssRuleResultBuilder {
     }
 
     public static Map<String, Object> build(List<RowContext> rows,
-                                            List<SpssCheckRule> rules,
+                                            List<Rule> rules,
                                             List<AnswerRecord> answers,
                                             Map<String, String> studentNamesByKey) {
         Map<String, StudentInfo> studentIndex = indexStudents(answers, studentNamesByKey);
@@ -97,11 +97,11 @@ public final class StudentSpssRuleResultBuilder {
         return result;
     }
 
-    private static List<RuleView> checkRules(List<SpssCheckRule> rules) {
+    private static List<RuleView> checkRules(List<Rule> rules) {
         List<RuleView> result = new ArrayList<RuleView>();
         if (rules == null) return result;
         int sortNo = 0;
-        for (SpssCheckRule rule : rules) {
+        for (Rule rule : rules) {
             sortNo++;
             if (rule == null || !rule.isCheckRule()) continue;
             result.add(new RuleView(String.format("R%03d", sortNo), rule.getTarget(), description(rule),
@@ -110,9 +110,7 @@ public final class StudentSpssRuleResultBuilder {
         return result;
     }
 
-    private static String description(SpssCheckRule rule) {
-        String label = rule.getLabel();
-        if (!isBlank(label)) return label.trim();
+    private static String description(Rule rule) {
         String description = rule.getDescription();
         if (!isBlank(description)) return description.trim();
         return rule.getTarget();

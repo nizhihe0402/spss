@@ -1,11 +1,14 @@
 package com.gxaysoft.project.spsscheck.web;
 
+import com.gxaysoft.project.spsscheck.engine.executor.RuleExecutor;
+import com.gxaysoft.project.spsscheck.engine.model.DatasetRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.model.RuleType;
+import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.io.*;
 import com.gxaysoft.project.spsscheck.model.*;
 import com.gxaysoft.project.spsscheck.parser.QuestionJsonParser;
-import com.gxaysoft.project.spsscheck.v2.handler.*;
-import com.gxaysoft.project.spsscheck.v2.model.*;
-import com.gxaysoft.project.spsscheck.v2.parser.BlockParser;
 import com.gxaysoft.project.spsscheck.validation.AnswerDataValidationReport;
 import com.gxaysoft.project.spsscheck.validation.AnswerDataValidator;
 import com.gxaysoft.project.spsscheck.validation.StudentValidationResultBuilder;
@@ -17,7 +20,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.math.BigDecimal;
 import java.nio.file.*;
 import java.util.*;
 
@@ -72,17 +74,15 @@ public class RunController {
             Map<String, Object> script = jdbc.queryForMap(
                     "SELECT id, script_name, script_content FROM sps_script WHERE id=?", scriptId);
 
-            // 2. Parse with V2 engine (classification + V1 execution steps merged)
+            // 2. Parse with unified engine
             String spsText = String.valueOf(script.get("script_content"));
-            List<RuleDefinition> v2Rules = BlockParser.parse(spsText);
+            ParsedScript parsed = SpssParser.parse(spsText);
+            List<Rule> rules = parsed.getRules();
+            List<DatasetRule> datasetRules = parsed.getDatasetRules();
             result.put("scriptName", script.get("script_name"));
-            result.put("totalRules", v2Rules.size());
+            result.put("totalRules", rules.size());
 
             // 3. Parse and validate CSV answer data.
-            //    The uploaded file is usually exported from bus_doctor_answer and may be GBK/GB18030.
-            //    Do not decode it as UTF-8 blindly.  The validator checks table_id/project_id/year/del_flag,
-            //    question_id-table_id consistency, option_id validity, content-option.code consistency,
-            //    duplicates and required-question coverage before rule execution.
             PrototypeFileReaders.AnswerCsvLoadResult csvLoad = PrototypeFileReaders.readAnswerCsvDetailed(csvFile.getBytes());
             List<AnswerRecord> answers = csvLoad.getAnswers();
             AnswerDataValidationReport validationReport = new AnswerDataValidator(jdbc).validate(csvLoad);
@@ -129,45 +129,24 @@ public class RunController {
                 return result;
             }
 
-            // 7. Execute: COMPUTE first (set intermediate values), then CHECK (use them)
+            // 7. Execute: single-pass row-level execution (engine handles compute→check ordering)
             long startTime = System.currentTimeMillis();
-            // Pass 1: COMPUTE_INTERMEDIATE (build intermediate variables)
-            for (RuleDefinition rule : v2Rules) {
-                if (rule.getType() != RuleType.COMPUTE_INTERMEDIATE) continue;
-                RuleHandler handler = HandlerRegistry.get(rule.getType());
-                if (handler == null) continue;
-                for (RowContext row : rows) {
-                    try { handler.execute(rule, row); } catch (Exception ignored) {}
-                }
-            }
-            // Pass 2: All CHECK types (IDENTITY, MISSING, RANGE, CONSISTENCY, DOCUMENT, CONDITIONAL, OUTCOME)
-            for (RuleDefinition rule : v2Rules) {
-                if (rule.getType() == RuleType.COMPUTE_INTERMEDIATE
-                        || rule.getType() == RuleType.DUPLICATE_MARK
-                        || rule.getType() == RuleType.OUTPUT_GROUP) continue;
-                RuleHandler handler = HandlerRegistry.get(rule.getType());
-                if (handler == null) continue;
-                for (RowContext row : rows) {
-                    try { handler.execute(rule, row); } catch (Exception ignored) {}
-                }
-            }
-            // Pass 3: DUPLICATE_MARK
-            RuleHandler dupHandler = HandlerRegistry.get(RuleType.DUPLICATE_MARK);
-            if (dupHandler != null) {
-                ((DuplicateMarkHandler) dupHandler).executeOnDataset(rows, "PrimaryFirst1", "PrimaryLast");
+            RuleExecutor.execute(rows, rules);
+            for (DatasetRule dr : datasetRules) {
+                dr.execute(rows);
             }
             long elapsed = System.currentTimeMillis() - startTime;
 
-            // 8. Build result summary — use V2 RuleDefinitions
+            // 8. Build result summary
             result.put("code", 0);
             result.put("totalRows", rows.size());
             result.put("tableId", tableId);
             result.put("elapsedMs", elapsed);
 
             List<Map<String, Object>> ruleResults = new ArrayList<>();
-            for (RuleDefinition r : v2Rules) {
-                if (r.getType() == RuleType.COMPUTE_INTERMEDIATE
-                        || r.getType() == RuleType.OUTPUT_GROUP) continue;
+            for (Rule r : rules) {
+                RuleType rt = r.getType() != null ? r.getType() : RuleType.CONDITIONAL_BLOCK;
+                if (rt == RuleType.COMPUTE_INTERMEDIATE || rt == RuleType.OUTPUT_GROUP) continue;
                 String target = r.getTarget();
                 int errorCount = 0;
                 for (RowContext row : rows) {
@@ -175,8 +154,8 @@ public class RunController {
                 }
                 Map<String, Object> rr = new LinkedHashMap<>();
                 rr.put("target", target);
-                rr.put("type", r.getType().name());
-                rr.put("typeLabel", r.getType().label);
+                rr.put("type", rt.name());
+                rr.put("typeLabel", rt.label);
                 rr.put("description", r.getDescription());
                 rr.put("errorCount", errorCount);
                 rr.put("totalRows", rows.size());
@@ -191,8 +170,9 @@ public class RunController {
             for (RowContext row : rows) {
                 if (shown >= 100) break;
                 boolean hasError = false;
-                for (RuleDefinition r : v2Rules) {
-                    if (r.getType() == RuleType.COMPUTE_INTERMEDIATE) continue;
+                for (Rule r : rules) {
+                    RuleType rt = r.getType() != null ? r.getType() : RuleType.CONDITIONAL_BLOCK;
+                    if (rt == RuleType.COMPUTE_INTERMEDIATE) continue;
                     if (row.getFlag(r.getTarget()) == 1) { hasError = true; break; }
                 }
                 if (hasError) {
@@ -200,8 +180,9 @@ public class RunController {
                     Map<String, Object> er = new LinkedHashMap<>();
                     er.put("sampleKey", row.getSampleKey());
                     Map<String, String> rowFlags = new LinkedHashMap<>();
-                    for (RuleDefinition r : v2Rules) {
-                        if (r.getType() == RuleType.COMPUTE_INTERMEDIATE) continue;
+                    for (Rule r : rules) {
+                        RuleType rt = r.getType() != null ? r.getType() : RuleType.CONDITIONAL_BLOCK;
+                        if (rt == RuleType.COMPUTE_INTERMEDIATE) continue;
                         int f = row.getFlag(r.getTarget());
                         if (f == 1) rowFlags.put(r.getTarget(), r.getDescription() != null ? r.getDescription() : "异常");
                     }

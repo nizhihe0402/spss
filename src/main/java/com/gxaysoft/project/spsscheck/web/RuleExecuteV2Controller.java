@@ -20,10 +20,11 @@ import com.gxaysoft.project.spsscheck.validation.AnswerDataValidationReport;
 import com.gxaysoft.project.spsscheck.validation.AnswerDataValidator;
 import com.gxaysoft.project.spsscheck.validation.StudentSpssRuleResultBuilder;
 import com.gxaysoft.project.spsscheck.validation.StudentValidationResultBuilder;
-import com.gxaysoft.project.spsscheck.v1.executor.RuleEngine;
-import com.gxaysoft.project.spsscheck.v1.model.SpssCheckRule;
-import com.gxaysoft.project.spsscheck.v1.model.SpssDatasetRule;
-import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
+import com.gxaysoft.project.spsscheck.engine.executor.RuleExecutor;
+import com.gxaysoft.project.spsscheck.engine.model.DatasetRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -193,15 +194,16 @@ public class RuleExecuteV2Controller {
                 StudentInfoEnricher.mergeMissingStudentInfo(dbStudentData.studentInfo, studentData.studentInfo);
             }
 
-            List<SpssCheckRule> rules = SpssRuleParser.parseRules(spsText);
-            List<SpssDatasetRule> datasetRules = SpssRuleParser.parseDatasetRules(spsText);
+            ParsedScript parsed = SpssParser.parse(spsText);
+            List<Rule> rules = parsed.getRules();
+            List<DatasetRule> datasetRules = parsed.getDatasetRules();
             List<RowContext> rows = AnswerPivot.pivot(answers, mappings);
             StudentInfoEnricher.enrichRows(rows, dbStudentData.studentInfo);
             RuleCorrectionRuntimeService.CorrectionResult correctionResult =
                     new RuleCorrectionRuntimeService(jdbc).apply(scriptId, detectedTableId, rows, dbStudentData.studentInfo);
 
-            RuleEngine.execute(rows, rules);
-            for (SpssDatasetRule datasetRule : datasetRules) {
+            RuleExecutor.execute(rows, rules);
+            for (DatasetRule datasetRule : datasetRules) {
                 datasetRule.execute(rows);
             }
 

@@ -1,10 +1,10 @@
 package com.gxaysoft.project.spsscheck.web;
 
-import com.gxaysoft.project.spsscheck.v2.model.RuleDefinition;
-import com.gxaysoft.project.spsscheck.v2.model.RuleType;
-import com.gxaysoft.project.spsscheck.v2.parser.BlockParser;
-import com.gxaysoft.project.spsscheck.v1.model.SpssOutputRule;
-import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
+import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.model.RuleType;
+import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.persistence.ScriptQuestionMappingService;
 import com.gxaysoft.project.spsscheck.persistence.RuleCorrectionPlan;
 import com.gxaysoft.project.spsscheck.persistence.SourceQuestionMappingSyncService;
@@ -39,14 +39,15 @@ public class SnippetController {
                 result.put("code", 1); result.put("msg", "SPSS代码不能为空"); return result;
             }
 
-            List<RuleDefinition> rules = BlockParser.parse(spsText);
-            List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
+            ParsedScript parsed = SpssParser.parse(spsText);
+            List<Rule> rules = parsed.getRules();
+            List<OutputRule> outputRules = parsed.getOutputRules();
 
             Integer maxSort = jdbc.queryForObject(
                 "SELECT COALESCE(MAX(sort_no),0) FROM sps_rule WHERE script_id=?", Integer.class, scriptId);
             int sortNo = maxSort != null ? maxSort : 0;
 
-            for (RuleDefinition rd : rules) {
+            for (Rule rd : rules) {
                 sortNo++;
                 insertRuleV2(scriptId, sortNo, rd);
             }
@@ -54,7 +55,7 @@ public class SnippetController {
             Integer maxOut = jdbc.queryForObject(
                 "SELECT COALESCE(MAX(sort_no),0) FROM sps_output_rule WHERE script_id=?", Integer.class, scriptId);
             int outNo = maxOut != null ? maxOut : 0;
-            for (SpssOutputRule or : outputRules) {
+            for (OutputRule or : outputRules) {
                 outNo++;
                 insertOutputRuleInternal(scriptId, outNo, or);
             }
@@ -62,7 +63,7 @@ public class SnippetController {
             result.put("code", 0);
             result.put("rules", rules.size());
             result.put("outputRules", outputRules.size());
-            result.put("msg", "成功追加 " + rules.size() + " 条规则(V2)");
+            result.put("msg", "成功追加 " + rules.size() + " 条规则");
         } catch (Exception e) {
             result.put("code", 1); result.put("msg", "解析失败: " + e.getMessage());
         }
@@ -81,8 +82,9 @@ public class SnippetController {
                 result.put("code", 1); result.put("msg", "SPSS代码不能为空"); return result;
             }
 
-            List<RuleDefinition> rules = BlockParser.parse(spsText);
-            List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
+            ParsedScript parsed = SpssParser.parse(spsText);
+            List<Rule> rules = parsed.getRules();
+            List<OutputRule> outputRules = parsed.getOutputRules();
 
             KeyHolder keyHolder = new GeneratedKeyHolder();
             jdbc.update(conn -> {
@@ -99,12 +101,12 @@ public class SnippetController {
             insertScriptQuestionMappings(scriptId, scriptTableId);
 
             int sortNo = 0;
-            for (RuleDefinition rd : rules) {
+            for (Rule rd : rules) {
                 sortNo++;
                 insertRuleV2(scriptId, sortNo, rd);
             }
             int outNo = 0;
-            for (SpssOutputRule or : outputRules) {
+            for (OutputRule or : outputRules) {
                 outNo++;
                 insertOutputRuleInternal(scriptId, outNo, or);
             }
@@ -114,7 +116,7 @@ public class SnippetController {
             result.put("tableId", scriptTableId);
             result.put("rules", rules.size());
             result.put("outputRules", outputRules.size());
-            result.put("msg", "新建脚本 #" + scriptId + ", " + rules.size() + " 条规则(V2)");
+            result.put("msg", "新建脚本 #" + scriptId + ", " + rules.size() + " 条规则");
         } catch (Exception e) {
             result.put("code", 1); result.put("msg", "解析失败: " + e.getMessage());
         }
@@ -127,18 +129,20 @@ public class SnippetController {
         Map<String, Object> result = new LinkedHashMap<>();
         try {
             String spsText = body.getOrDefault("spsText", "");
-            List<RuleDefinition> rules = BlockParser.parse(spsText);
-            List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
+            ParsedScript parsed = SpssParser.parse(spsText);
+            List<Rule> rules = parsed.getRules();
+            List<OutputRule> outputRules = parsed.getOutputRules();
 
             List<Map<String, Object>> ruleList = new ArrayList<>();
-            for (RuleDefinition r : rules) {
+            for (Rule r : rules) {
                 String sources = String.join(",", r.getSourceVariables());
+                RuleType rt = r.getType() != null ? r.getType() : RuleType.CONDITIONAL_BLOCK;
                 RuleCorrectionPlan correction = RuleCorrectionPlan.detect(
-                        r.getType().name(), r.getTarget(), sources, r.getDescription());
+                        rt.name(), r.getTarget(), sources, r.getDescription());
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("target", r.getTarget());
-                m.put("type", r.getType().name());
-                m.put("typeLabel", r.getType().label);
+                m.put("type", rt.name());
+                m.put("typeLabel", rt.label);
                 m.put("description", r.getDescription());
                 m.put("sources", sources);
                 m.put("expression", r.getExpression());
@@ -157,32 +161,35 @@ public class SnippetController {
         return result;
     }
 
-    private void insertRuleV2(long scriptId, int sortNo, RuleDefinition rd) {
+    private void insertRuleV2(long scriptId, int sortNo, Rule rd) {
         String code = String.format("R%03d", sortNo);
         String sources = String.join(",", rd.getSourceVariables());
         String sourceQuestionMappings = new SourceQuestionMappingSyncService(jdbc).buildForSources(sources, loadScriptTableId(scriptId));
+        RuleType rt = rd.getType() != null ? rd.getType() : RuleType.CONDITIONAL_BLOCK;
         RuleCorrectionPlan correction = RuleCorrectionPlan.detect(
-                rd.getType().name(), rd.getTarget(), sources, rd.getDescription());
+                rt.name(), rd.getTarget(), sources, rd.getDescription());
+        String spssSource = rd.getSpssSource() != null ? rd.getSpssSource() : "";
+        String javaPreview = rd.getJavaPreview() != null ? rd.getJavaPreview() : "";
         jdbc.update(
             "INSERT INTO sps_rule (script_id, rule_code, rule_name, rule_type, target_variable, " +
             "source_variables, source_question_mappings, correction_enabled, correction_type, correction_variables, " +
             "correction_source, correction_strategy, correction_apply_stage, correction_write_clean, " +
             "correction_write_source, correction_description, spss_source, rule_json, java_preview, sort_no, affect_clean, warning_message) " +
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            scriptId, code, rd.getTarget(), rd.getType().name(),
+            scriptId, code, rd.getTarget(), rt.name(),
             rd.getTarget(), sources, sourceQuestionMappings,
             correction.enabled ? 1 : 0, correction.type, correction.variables,
             correction.source, correction.strategy, correction.applyStage,
             correction.writeClean ? 1 : 0, correction.writeSource ? 1 : 0,
             correction.description,
-            truncate(rd.getSpssBlock(), 65535),
-            "{\"v2\":true,\"type\":\"" + rd.getType().name() + "\"}",
-            rd.getJavaPreview(), sortNo,
-            rd.getType() == RuleType.IDENTITY_CHECK
-                    || rd.getType() == RuleType.MISSING_CHECK
-                    || rd.getType() == RuleType.RANGE_CHECK
-                    || rd.getType() == RuleType.CONSISTENCY_CHECK
-                    || rd.getType() == RuleType.DOCUMENT_CHECK ? 1 : 0,
+            truncate(spssSource, 65535),
+            "{\"v2\":true,\"type\":\"" + rt.name() + "\"}",
+            javaPreview, sortNo,
+            rt == RuleType.IDENTITY_CHECK
+                    || rt == RuleType.MISSING_CHECK
+                    || rt == RuleType.RANGE_CHECK
+                    || rt == RuleType.CONSISTENCY_CHECK
+                    || rt == RuleType.DOCUMENT_CHECK ? 1 : 0,
             rd.getDescription());
     }
 
@@ -218,7 +225,7 @@ public class SnippetController {
         }
     }
 
-    private void insertOutputRuleInternal(long scriptId, int sortNo, SpssOutputRule or) {
+    private void insertOutputRuleInternal(long scriptId, int sortNo, OutputRule or) {
         String code = String.format("O%03d", sortNo);
         String type = or.getSheetName().contains("清理后") ? "CLEAN_DATA" : "ERROR_GROUP";
         jdbc.update("INSERT INTO sps_output_rule (script_id, output_code, output_name, output_type, " +

@@ -1,17 +1,21 @@
 package com.gxaysoft.project.spsscheck;
 
-import com.gxaysoft.project.spsscheck.v1.executor.RuleAvailabilityChecker;
-import com.gxaysoft.project.spsscheck.v1.executor.RuleEngine;
+import com.gxaysoft.project.spsscheck.engine.executor.AvailabilityChecker;
+import com.gxaysoft.project.spsscheck.engine.executor.RuleExecutor;
+import com.gxaysoft.project.spsscheck.engine.model.DatasetRule;
+import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
+import com.gxaysoft.project.spsscheck.engine.model.Rule;
+import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
+import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.io.AnswerPivot;
 import com.gxaysoft.project.spsscheck.io.OutputWriter;
 import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
 import com.gxaysoft.project.spsscheck.io.StudentInfoLoader;
 import com.gxaysoft.project.spsscheck.io.TableIdDetector;
 import com.gxaysoft.project.spsscheck.model.*;
-import com.gxaysoft.project.spsscheck.v1.model.*;
 import com.gxaysoft.project.spsscheck.parser.QuestionJsonParser;
 import com.gxaysoft.project.spsscheck.parser.QuestionSqlParser;
-import com.gxaysoft.project.spsscheck.v1.parser.SpssRuleParser;
+import com.gxaysoft.project.spsscheck.parser.SpssUtil;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -153,21 +157,31 @@ class SpssCheckTest {
             studentData = StudentInfoLoader.load(studentInfoPath);
             mappings.putAll(studentData.mappings);
         }
-        List<SpssCheckRule> rules = SpssRuleParser.parseRules(spsText);
-        List<SpssDatasetRule> datasetRules = SpssRuleParser.parseDatasetRules(spsText);
-        List<SpssOutputRule> outputRules = SpssRuleParser.parseOutputRules(spsText);
-        List<RuleAvailability> availability = RuleAvailabilityChecker.check(rules, datasetRules, mappings);
+        ParsedScript parsed = SpssParser.parse(spsText);
+        List<Rule> rules = parsed.getRules();
+        List<DatasetRule> datasetRules = parsed.getDatasetRules();
+        List<OutputRule> outputRules = parsed.getOutputRules();
+
+        // Availability check
+        java.util.Set<String> dbColumns = new java.util.LinkedHashSet<String>();
+        for (String variable : mappings.keySet()) {
+            dbColumns.add(SpssUtil.normalize(variable));
+        }
+        AvailabilityChecker checker = new AvailabilityChecker(dbColumns);
+        for (DatasetRule dr : datasetRules) {
+            checker.addDatasetVariables(dr.getFirstVariable(), dr.getLastVariable());
+        }
+        List<Rule> availableRules = checker.filterAvailable(rules);
+        long executable = availableRules.size();
 
         List<RowContext> rows = AnswerPivot.pivot(answers, mappings);
         if (studentData != null) {
             StudentInfoLoader.enrichRows(rows, studentData.studentInfo);
         }
-        RuleEngine.execute(rows, rules);
-        for (SpssDatasetRule datasetRule : datasetRules) {
+        RuleExecutor.execute(rows, rules);
+        for (DatasetRule datasetRule : datasetRules) {
             datasetRule.execute(rows);
         }
-
-        long executable = availability.stream().filter(RuleAvailability::isExecutable).count();
 
         System.out.printf("[%s] answers=%d mappings=%d rows=%d rules=%d outputRules=%d executable=%d/%d%n",
                 fixture.name, answers.size(), mappings.size(), rows.size(),
@@ -184,13 +198,13 @@ class SpssCheckTest {
         assertFalse(spsText.isEmpty(), fixture.name + ": SPS text must not be empty");
 
         // Verify output rules are well-formed
-        for (SpssOutputRule or : outputRules) {
+        for (OutputRule or : outputRules) {
             assertNotNull(or.getSheetName(), "output sheet name must not be null");
             assertFalse(or.getSheetName().isEmpty(), "output sheet name must not be empty");
         }
 
         // Verify all rule steps have source variables
-        for (SpssCheckRule rule : rules) {
+        for (Rule rule : rules) {
             assertNotNull(rule.getSourceVariables(), rule.getTarget() + ": sourceVariables must not be null");
         }
 
