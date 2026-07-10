@@ -47,10 +47,10 @@ public class UploadController {
             String spsText = readSpsBytes(rawBytes);
             String name = extractScriptName(spsText, file.getOriginalFilename());
             long scriptTableId = resolveScriptTableId(tableId, tableId2, name);
-            String scriptTitle = (title != null && !title.trim().isEmpty()) ? title.trim() : name;
             Long scriptProjectId = (projectId != null && projectId.longValue() > 0) ? projectId : null;
             String scriptYear = (year != null && !year.trim().isEmpty()) ? year.trim() : null;
             String scriptProjectType = (projectType != null && !projectType.trim().isEmpty()) ? projectType.trim() : null;
+            String scriptTitle = buildScriptTitle(title, scriptProjectId, scriptTableId, name);
 
             // Engine: unified parsing
             ParsedScript parsed = SpssParser.parse(spsText);
@@ -202,4 +202,44 @@ public class UploadController {
     private static String truncate(String s, int max) {
         return s == null ? "" : s.length() > max ? s.substring(0, max) : s;
     }
+
+    /**
+     * 构建脚本标题: 前端传入 > 项目名-表名 > SPS文件提取名
+     */
+    private String buildScriptTitle(String title, Long projectId, long tableId, String fallbackName) {
+        if (title != null && !title.trim().isEmpty()) {
+            return title.trim();
+        }
+        // 从数据库查询项目名和表名，拼成 "项目名 - 表名"
+        String projName = null;
+        String tableName = null;
+        try {
+            if (projectId != null && projectId > 0) {
+                Map<String, Object> proj = jdbc.queryForMap(
+                    "SELECT project_name FROM bus_project WHERE project_id=? AND del_flag='0'", projectId);
+                projName = stringValue(proj.get("project_name"));
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (tableId > 0) {
+                Map<String, Object> tbl = jdbc.queryForMap(
+                    "SELECT table_name FROM bus_table WHERE table_id=? AND del_flag='0'", tableId);
+                tableName = stringValue(tbl.get("table_name"));
+            }
+        } catch (Exception ignored) {}
+        if (!isBlank(projName) || !isBlank(tableName)) {
+            StringBuilder sb = new StringBuilder();
+            if (!isBlank(projName)) sb.append(projName);
+            if (!isBlank(tableName)) {
+                if (sb.length() > 0) sb.append(" - ");
+                sb.append(tableName);
+            }
+            return sb.toString();
+        }
+        return fallbackName;
+    }
+
+    private static String stringValue(Object v) { return v == null ? "" : String.valueOf(v).trim(); }
+
+    private static boolean isBlank(String s) { return s == null || s.trim().isEmpty(); }
 }

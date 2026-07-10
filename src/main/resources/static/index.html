@@ -520,12 +520,15 @@ function initUpload(){
   // 上传组件
   upload.render({
     elem:'#uploadBox', url:'/api/upload', accept:'file', exts:'sps',
-    data: {
-      title: function(){ return $('#uploadTitle').val(); },
-      projectId: function(){ return $('#uploadProjectId').val(); },
-      year: function(){ return $('#uploadYear').val(); },
-      tableId: function(){ return $('#uploadTableId').val(); },
-      projectType: function(){ return $('#uploadProjectType').val(); }
+    before: function(){
+      updateUploadTitle(); // 上传前强制刷新标题
+      this.data = {
+        title: $('#uploadTitle').val(),
+        projectId: $('#uploadProjectId').val(),
+        year: $('#uploadYear').val(),
+        tableId: $('#uploadTableId').val(),
+        projectType: $('#uploadProjectType').val()
+      };
     },
     done:function(res){
       if(res.code==0){
