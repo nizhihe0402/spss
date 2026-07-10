@@ -20,7 +20,14 @@ public class RuleCorrectionRuntimeService {
                                   long tableId,
                                   List<RowContext> rows,
                                   Map<String, Map<String, String>> studentInfo) {
-        return applyInMemory(rows, loadPlans(scriptId), tableId, studentInfo);
+        List<CorrectionPlan> plans = loadPlans(scriptId);
+        System.out.println("[纠偏] scriptId=" + scriptId + " 加载计划数=" + plans.size());
+        for (CorrectionPlan p : plans) {
+            System.out.println("[纠偏]   计划: type=" + p.type + " vars=" + p.variables + " writeClean=" + p.writeClean);
+        }
+        CorrectionResult result = applyInMemory(rows, plans, tableId, studentInfo);
+        System.out.println("[纠偏] 应用完成: 纠正行数=" + result.getCleanValues().size());
+        return result;
     }
 
     public List<CorrectionPlan> loadPlans(long scriptId) {
