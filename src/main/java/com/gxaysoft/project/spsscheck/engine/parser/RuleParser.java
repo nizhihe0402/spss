@@ -136,13 +136,21 @@ public final class RuleParser {
 
     /**
      * 构建人类可读的 Java 伪代码预览。
+     * 超过 MAX_PREVIEW 步时截断，避免长串拼接。
      */
+    private static final int MAX_PREVIEW_STEPS = 5;
+
     static String buildJavaPreview(Rule rule) {
         StringBuilder sb = new StringBuilder();
         if (rule.getSteps() != null && !rule.getSteps().isEmpty()) {
-            for (Step step : rule.getSteps()) {
+            int total = rule.getSteps().size();
+            int shown = Math.min(total, MAX_PREVIEW_STEPS);
+            for (int i = 0; i < shown; i++) {
                 if (sb.length() > 0) sb.append("; ");
-                sb.append(step.javaPreview());
+                sb.append(rule.getSteps().get(i).javaPreview());
+            }
+            if (total > MAX_PREVIEW_STEPS) {
+                sb.append("; ...共").append(total).append("步");
             }
         } else if (rule.getExpression() != null && !rule.getExpression().isEmpty()) {
             sb.append(rule.getTarget()).append(" = ").append(rule.getExpression());

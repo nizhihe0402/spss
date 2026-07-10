@@ -71,6 +71,24 @@ public class RecodeCase {
         return result != null && "COPY".equalsIgnoreCase(result.trim());
     }
 
+    /** 人类可读的显示形式，如 "Lowest~34.0=1", "MISSING=1", "ELSE=0" */
+    public String toDisplayString() {
+        StringBuilder sb = new StringBuilder();
+        if ("missing".equals(type)) {
+            sb.append("MISSING");
+        } else if ("else".equals(type)) {
+            sb.append("ELSE");
+        } else if ("range".equals(type)) {
+            sb.append(from != null ? from : "");
+            sb.append("~");
+            sb.append(to != null ? to : "");
+        } else if ("equals".equals(type)) {
+            sb.append(from);
+        }
+        sb.append("=").append(result);
+        return sb.toString();
+    }
+
     public boolean isZeroOneResult() {
         BigDecimal decimal = toDecimal(result);
         return decimal != null

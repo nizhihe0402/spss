@@ -47,7 +47,16 @@ public class Step {
             sb.append("COMPUTE ").append(getTarget()).append(" = ").append(ca.getExpression());
         } else if (action instanceof RecodeAction) {
             RecodeAction ra = (RecodeAction) action;
-            sb.append("RECODE ").append(ra.getSource()).append(" → ").append(getTarget());
+            sb.append("RECODE ").append(ra.getSource());
+            if (ra.getCases() != null && !ra.getCases().isEmpty()) {
+                sb.append("(");
+                for (int i = 0; i < ra.getCases().size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(ra.getCases().get(i).toDisplayString());
+                }
+                sb.append(")");
+            }
+            sb.append(" → ").append(getTarget());
         } else if (action instanceof IfAssignAction) {
             IfAssignAction ia = (IfAssignAction) action;
             sb.append("IF(").append(ia.getCondition()).append(") ").append(getTarget()).append(" = ").append(ia.getValue());
