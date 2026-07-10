@@ -21,7 +21,11 @@ public class RuleController {
             "SELECT id, rule_code AS code, rule_name AS name, rule_type AS type, " +
             "target_variable AS target, source_variables AS sources, " +
             "source_question_mappings AS sourceQuestionMappings, " +
-            "warning_message AS description, sort_no AS sort " +
+            "warning_message AS description, sort_no AS sort, " +
+            "start_line AS startLine, end_line AS endLine, " +
+            "correction_enabled AS correctionEnabled, correction_type AS correctionType, " +
+            "correction_variables AS correctionVariables, correction_strategy AS correctionStrategy, " +
+            "correction_source AS correctionSource, correction_apply_stage AS correctionApplyStage " +
             "FROM sps_rule WHERE script_id=? ORDER BY sort_no", scriptId);
     }
 
