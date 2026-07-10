@@ -296,7 +296,7 @@ var currentScriptId, currentScriptName, currentRuleId;
 var table, element, upload, form, layer;
 
 // V2 rule API: line-aware segmentation + rule type labels.
-var RULE_API = '/api/v2/rules';
+var RULE_API = '/api/rules';
 
 layui.use(['table','element','upload','form','layer'], function(){
   table = layui.table; element = layui.element;
@@ -709,7 +709,7 @@ function initRun(){
     if(runStuFile){ fd.append('student', runStuFile, runStuFile.name); fd.append('studentFile', runStuFile, runStuFile.name); }
     var strictValidate = $('#strictValidate').is(':checked');
     fd.append('strictValidate', strictValidate);
-    $.ajax({url:'/api/v2/rules/execute-db', method:'POST', data:fd, processData:false, contentType:false,
+    $.ajax({url:'/api/execute/db', method:'POST', data:fd, processData:false, contentType:false,
       success:function(res){
         renderStudentSplitResult(res.data || res.splitResult || buildSplitFromValidationReport(res.validationReport));
         if(res.code!=0){

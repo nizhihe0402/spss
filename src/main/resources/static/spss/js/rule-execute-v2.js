@@ -85,7 +85,7 @@
         clearResult();
 
         $.ajax({
-            url: '/api/v2/rules/execute',
+            url: '/api/execute/upload',
             type: 'POST',
             data: formData,
             processData: false,

@@ -32,7 +32,12 @@ public class RuleController {
             "target_variable AS target, source_variables AS sources, enabled, " +
             "source_question_mappings AS sourceQuestionMappings, " +
             "spss_source AS spss, java_preview AS java, rule_json AS ruleJson, " +
-            "warning_message AS description " +
+            "warning_message AS description, " +
+            "correction_enabled AS correctionEnabled, correction_type AS correctionType, " +
+            "correction_variables AS correctionVariables, correction_source AS correctionSource, " +
+            "correction_apply_stage AS correctionApplyStage, correction_write_clean AS correctionWriteClean, " +
+            "correction_write_source AS correctionWriteSource, correction_strategy AS correctionStrategy, " +
+            "correction_description AS correctionDescription " +
             "FROM sps_rule WHERE id=?", id);
         List<Map<String, Object>> steps = jdbc.queryForList(
             "SELECT step_no AS no, step_type AS type, condition_text AS `condition`, " +
@@ -58,5 +63,28 @@ public class RuleController {
     public Map<String, Object> toggle(@PathVariable Long id, @RequestParam int enabled) {
         jdbc.update("UPDATE sps_rule SET enabled=? WHERE id=?", enabled, id);
         return Collections.singletonMap("code", 0);
+    }
+
+    @PutMapping("/rules/{id}/correction")
+    public Map<String, Object> updateCorrection(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        jdbc.update("UPDATE sps_rule SET correction_enabled=?, correction_type=?, " +
+            "correction_variables=?, correction_source=?, correction_apply_stage=?, " +
+            "correction_write_clean=?, correction_write_source=?, correction_strategy=?, " +
+            "correction_description=? WHERE id=?",
+            body.get("correctionEnabled"), body.get("correctionType"),
+            body.get("correctionVariables"), body.get("correctionSource"),
+            body.get("correctionApplyStage"), body.get("correctionWriteClean"),
+            body.get("correctionWriteSource"), body.get("correctionStrategy"),
+            body.get("correctionDescription"), id);
+        return Collections.singletonMap("code", 0);
+    }
+
+    @PostMapping("/rules/sync-source-question-mappings")
+    public Map<String, Object> syncSourceQuestionMappings(@RequestParam Long scriptId) {
+        int updated = new SourceQuestionMappingSyncService(jdbc).syncScript(scriptId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("code", 0);
+        result.put("updated", updated);
+        return result;
     }
 }
