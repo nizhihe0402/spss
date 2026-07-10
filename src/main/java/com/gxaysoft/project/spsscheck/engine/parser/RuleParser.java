@@ -127,7 +127,30 @@ public final class RuleParser {
         rules.addAll(parseRecodeIntoRules(spssText, labels));
         rules.addAll(parseStandaloneIfAssignRules(spssText, labels));
 
-        return mergeInitDeclarations(rules, labels);
+        List<Rule> merged = mergeInitDeclarations(rules, labels);
+        for (Rule r : merged) {
+            r.setJavaPreview(buildJavaPreview(r));
+        }
+        return merged;
+    }
+
+    /**
+     * 构建人类可读的 Java 伪代码预览。
+     */
+    static String buildJavaPreview(Rule rule) {
+        StringBuilder sb = new StringBuilder();
+        if (rule.getSteps() != null && !rule.getSteps().isEmpty()) {
+            for (Step step : rule.getSteps()) {
+                if (sb.length() > 0) sb.append("; ");
+                sb.append(step.javaPreview());
+            }
+        } else if (rule.getExpression() != null && !rule.getExpression().isEmpty()) {
+            sb.append(rule.getTarget()).append(" = ").append(rule.getExpression());
+        }
+        if (rule.isCheckRule()) {
+            sb.append("; ").append(rule.getTarget()).append(" = flag");
+        }
+        return sb.toString();
     }
 
     /**

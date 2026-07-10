@@ -35,4 +35,23 @@ public class Step {
         }
         return new ArrayList<>(vars.values());
     }
+
+    /** 人类可读的 Java 伪代码片段 */
+    public String javaPreview() {
+        StringBuilder sb = new StringBuilder();
+        if (condition != null) {
+            sb.append("IF(").append(condition).append(") ");
+        }
+        if (action instanceof ComputeAction) {
+            ComputeAction ca = (ComputeAction) action;
+            sb.append("COMPUTE ").append(getTarget()).append(" = ").append(ca.getExpression());
+        } else if (action instanceof RecodeAction) {
+            RecodeAction ra = (RecodeAction) action;
+            sb.append("RECODE ").append(ra.getSource()).append(" → ").append(getTarget());
+        } else if (action instanceof IfAssignAction) {
+            IfAssignAction ia = (IfAssignAction) action;
+            sb.append("IF(").append(ia.getCondition()).append(") ").append(getTarget()).append(" = ").append(ia.getValue());
+        }
+        return sb.toString();
+    }
 }
