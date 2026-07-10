@@ -135,22 +135,27 @@ public final class RuleParser {
     }
 
     /**
-     * 构建人类可读的 Java 伪代码预览。
-     * 超过 MAX_PREVIEW 步时截断，避免长串拼接。
+     * 构建人类可读的 Java 伪代码预览（完整代码链路，不截断）。
      */
-    private static final int MAX_PREVIEW_STEPS = 5;
-
     static String buildJavaPreview(Rule rule) {
         StringBuilder sb = new StringBuilder();
         if (rule.getSteps() != null && !rule.getSteps().isEmpty()) {
-            int total = rule.getSteps().size();
-            int shown = Math.min(total, MAX_PREVIEW_STEPS);
-            for (int i = 0; i < shown; i++) {
-                if (sb.length() > 0) sb.append("; ");
-                sb.append(rule.getSteps().get(i).javaPreview());
+            // 先统计: 无条件步骤数 + 条件步骤数
+            int unconditional = 0, conditional = 0;
+            for (Step s : rule.getSteps()) {
+                if (s.getCondition() == null) unconditional++; else conditional++;
             }
-            if (total > MAX_PREVIEW_STEPS) {
-                sb.append("; ...共").append(total).append("步");
+            // 无条件步骤少 → 逐条展示；多 → 摘要
+            boolean showAll = rule.getSteps().size() <= 8;
+            if (showAll) {
+                for (int i = 0; i < rule.getSteps().size(); i++) {
+                    if (sb.length() > 0) sb.append("\n");
+                    sb.append(rule.getSteps().get(i).javaPreview());
+                }
+            } else {
+                sb.append(unconditional).append(" 无条件步骤 + ")
+                  .append(conditional).append(" 条件步骤，共")
+                  .append(rule.getSteps().size()).append("步");
             }
         } else if (rule.getExpression() != null && !rule.getExpression().isEmpty()) {
             sb.append(rule.getTarget()).append(" = ").append(rule.getExpression());

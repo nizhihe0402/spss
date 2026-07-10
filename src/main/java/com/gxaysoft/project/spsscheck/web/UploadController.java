@@ -116,27 +116,96 @@ public class UploadController {
                 rt.name(), rd.getTarget(), sources, rd.getDescription());
         String spssSource = rd.getSpssSource() != null ? rd.getSpssSource() : "";
         String javaPreview = rd.getJavaPreview() != null ? rd.getJavaPreview() : "";
-        jdbc.update(
-            "INSERT INTO sps_rule (script_id, rule_code, rule_name, rule_type, target_variable, " +
-            "source_variables, source_question_mappings, correction_enabled, correction_type, correction_variables, " +
-            "correction_source, correction_strategy, correction_apply_stage, correction_write_clean, " +
-            "correction_write_source, correction_description, spss_source, rule_json, java_preview, sort_no, affect_clean, warning_message) " +
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            scriptId, code, rd.getTarget(), rt.name(),
-            rd.getTarget(), sources, sourceQuestionMappings,
-            correction.enabled ? 1 : 0, correction.type, correction.variables,
-            correction.source, correction.strategy, correction.applyStage,
-            correction.writeClean ? 1 : 0, correction.writeSource ? 1 : 0,
-            correction.description,
-            truncate(spssSource, 65535),
-            "{\"v2\":true,\"type\":\"" + rt.name() + "\"}",
-            javaPreview, sortNo,
-            rt == RuleType.IDENTITY_CHECK
-                    || rt == RuleType.MISSING_CHECK
-                    || rt == RuleType.RANGE_CHECK
-                    || rt == RuleType.CONSISTENCY_CHECK
-                    || rt == RuleType.DOCUMENT_CHECK ? 1 : 0,
-            rd.getDescription());
+
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbc.update(conn -> {
+            PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO sps_rule (script_id, rule_code, rule_name, rule_type, target_variable, " +
+                "source_variables, source_question_mappings, correction_enabled, correction_type, correction_variables, " +
+                "correction_source, correction_strategy, correction_apply_stage, correction_write_clean, " +
+                "correction_write_source, correction_description, spss_source, rule_json, java_preview, sort_no, " +
+                "affect_clean, warning_message, start_line, end_line) " +
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                Statement.RETURN_GENERATED_KEYS);
+            ps.setLong(1, scriptId);
+            ps.setString(2, code);
+            ps.setString(3, rd.getTarget());
+            ps.setString(4, rt.name());
+            ps.setString(5, rd.getTarget());
+            ps.setString(6, sources);
+            ps.setString(7, sourceQuestionMappings);
+            ps.setInt(8, correction.enabled ? 1 : 0);
+            ps.setString(9, correction.type);
+            ps.setString(10, correction.variables);
+            ps.setString(11, correction.source);
+            ps.setString(12, correction.strategy);
+            ps.setString(13, correction.applyStage);
+            ps.setInt(14, correction.writeClean ? 1 : 0);
+            ps.setInt(15, correction.writeSource ? 1 : 0);
+            ps.setString(16, correction.description);
+            ps.setString(17, truncate(spssSource, 65535));
+            ps.setString(18, "{\"v2\":true,\"type\":\"" + rt.name() + "\"}");
+            ps.setString(19, javaPreview);
+            ps.setInt(20, sortNo);
+            ps.setInt(21, rt == RuleType.IDENTITY_CHECK || rt == RuleType.MISSING_CHECK
+                    || rt == RuleType.RANGE_CHECK || rt == RuleType.CONSISTENCY_CHECK
+                    || rt == RuleType.DOCUMENT_CHECK ? 1 : 0);
+            ps.setString(22, rd.getDescription());
+            ps.setInt(23, rd.getStartLine());
+            ps.setInt(24, rd.getEndLine());
+            return ps;
+        }, keyHolder);
+
+        long ruleId = keyHolder.getKey().longValue();
+        insertRuleSteps(ruleId, rd);
+    }
+
+    private void insertRuleSteps(long ruleId, Rule rd) {
+        if (rd.getSteps() == null || rd.getSteps().isEmpty()) return;
+        int stepNo = 0;
+        for (com.gxaysoft.project.spsscheck.engine.model.Step step : rd.getSteps()) {
+            stepNo++;
+            String stepType = "COMPUTE";
+            String sourceVar = null;
+            String targetVar = step.getTarget();
+            String exprText = null;
+            String assignVal = null;
+            String recodeJson = null;
+
+            if (step.getAction() instanceof com.gxaysoft.project.spsscheck.engine.model.ComputeAction) {
+                stepType = "COMPUTE";
+                exprText = ((com.gxaysoft.project.spsscheck.engine.model.ComputeAction) step.getAction()).getExpression();
+            } else if (step.getAction() instanceof com.gxaysoft.project.spsscheck.engine.model.RecodeAction) {
+                stepType = "RECODE";
+                com.gxaysoft.project.spsscheck.engine.model.RecodeAction ra =
+                    (com.gxaysoft.project.spsscheck.engine.model.RecodeAction) step.getAction();
+                sourceVar = ra.getSource();
+                recodeJson = recodeCasesToJson(ra.getCases());
+            } else if (step.getAction() instanceof com.gxaysoft.project.spsscheck.engine.model.IfAssignAction) {
+                stepType = "IF_ASSIGN";
+                com.gxaysoft.project.spsscheck.engine.model.IfAssignAction ia =
+                    (com.gxaysoft.project.spsscheck.engine.model.IfAssignAction) step.getAction();
+                assignVal = ia.getValue();
+            }
+
+            jdbc.update(
+                "INSERT INTO sps_rule_step (rule_id, step_no, step_type, condition_text, " +
+                "source_variable, target_variable, expression_text, assign_value, recode_json) " +
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                ruleId, stepNo, stepType, step.getCondition(),
+                sourceVar, targetVar, exprText, assignVal, recodeJson);
+        }
+    }
+
+    private String recodeCasesToJson(java.util.List<com.gxaysoft.project.spsscheck.model.RecodeCase> cases) {
+        if (cases == null || cases.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < cases.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append("\"").append(cases.get(i).toDisplayString().replace("\"", "\\\"")).append("\"");
+        }
+        sb.append("]");
+        return sb.toString();
     }
 
     private long resolveScriptTableId(Long tableId, Long tableId2, String scriptName) {
