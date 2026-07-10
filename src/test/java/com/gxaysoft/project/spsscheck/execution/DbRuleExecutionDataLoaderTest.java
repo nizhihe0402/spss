@@ -1,5 +1,6 @@
 package com.gxaysoft.project.spsscheck.execution;
 
+import com.gxaysoft.project.spsscheck.config.AnswerTableType;
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
 import org.junit.jupiter.api.Test;
 
@@ -60,7 +61,7 @@ class DbRuleExecutionDataLoaderTest {
         row.put("year", "2025");
         row.put("del_flag", "0");
 
-        AnswerRecord record = DbRuleExecutionDataLoader.toAnswerRecord(row, false, 3);
+        AnswerRecord record = DbRuleExecutionDataLoader.toAnswerRecord(row, AnswerTableType.DOCTOR_ANSWER, 3);
 
         assertEquals(100L, record.getRawId());
         assertEquals(3, record.getRowNumber());
@@ -86,7 +87,7 @@ class DbRuleExecutionDataLoaderTest {
         row.put("year", "2025");
         row.put("del_flag", "0");
 
-        AnswerRecord record = DbRuleExecutionDataLoader.toAnswerRecord(row, true, 9);
+        AnswerRecord record = DbRuleExecutionDataLoader.toAnswerRecord(row, AnswerTableType.USER_ANSWER, 9);
 
         assertEquals("11001001", record.getSampleKey());
         assertEquals(11001001L, record.getStudentId());

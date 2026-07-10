@@ -6,6 +6,8 @@ import com.gxaysoft.project.spsscheck.model.AnswerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+@Service
 public class RuleExecutionPersistenceService {
     private static final Logger log = LoggerFactory.getLogger(RuleExecutionPersistenceService.class);
 
@@ -24,6 +27,7 @@ public class RuleExecutionPersistenceService {
         this.jdbc = jdbc;
     }
 
+    @Transactional
     public SaveSummary saveDbExecutionResult(DbRuleExecutionDataLoader.Request request,
                                              String answerTable,
                                              PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
@@ -32,6 +36,7 @@ public class RuleExecutionPersistenceService {
                 Collections.<String, Map<String, String>>emptyMap());
     }
 
+    @Transactional
     public SaveSummary saveDbExecutionResult(DbRuleExecutionDataLoader.Request request,
                                              String answerTable,
                                              PrototypeFileReaders.AnswerCsvLoadResult csvLoad,
@@ -158,6 +163,7 @@ public class RuleExecutionPersistenceService {
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     }
 
+    @Transactional
     private void clearPreviousResults(DbRuleExecutionDataLoader.Request request,
                                       String cleanTable,
                                       String failTable,
@@ -171,6 +177,7 @@ public class RuleExecutionPersistenceService {
                 request.projectId, request.tableId, request.year, request.divisionId, request.schoolId, request.schoolId);
     }
 
+    @Transactional
     private int insertCleanRows(String answerTable, String cleanTable, List<Long> cleanIds, long cleanTaskId) {
         if (cleanIds.isEmpty()) {
             return 0;
@@ -225,6 +232,7 @@ public class RuleExecutionPersistenceService {
         return result;
     }
 
+    @Transactional
     private int insertFailRows(DbRuleExecutionDataLoader.Request request,
                                String answerTable,
                                String failTable,
@@ -368,7 +376,8 @@ public class RuleExecutionPersistenceService {
             String text = String.valueOf(value).trim();
             if (text.endsWith(".0")) text = text.substring(0, text.length() - 2);
             return text.isEmpty() ? null : Long.valueOf(Long.parseLong(text));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("类型转换失败: {}", e.getMessage());
             return null;
         }
     }

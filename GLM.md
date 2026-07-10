@@ -22,9 +22,9 @@ java -Dfile.encoding=UTF-8 \
   docs/sources/sql/相关表数据.sql \
   docs/sources/cvs/表1-3.csv
 
-# V2 batch runner: scans every .sps, classifies + executes, prints a summary
+# V2Runner batch scanner: scans every .sps, parses + executes, prints a summary
 java -Dfile.encoding=UTF-8 -cp target/classes \
-  com.gxaysoft.project.spsscheck.v2.V2Runner
+  com.gxaysoft.project.spsscheck.V2Runner
 
 # Tests (JUnit 5)
 mvn -q test
@@ -53,91 +53,88 @@ It is **NOT** a general IBM SPSS interpreter. It supports a restricted subset:
 `DATASET COPY`/`ACTIVATE`, `FILTER OFF`/`USE ALL`, `LEAVE`/`FORMAT`/`VARIABLE LEVEL`,
 `DESCRIPTIVES`/`FREQUENCIES`/`CTABLES`, general `LOOP`/`AGGREGATE`/`ANY()`.
 
-## Architecture — v1/v2 dual engine (transitional)
+## Architecture — unified engine
 
-The single-file `SpssPrototypeCore.java` described in the design docs has been
-split into packages. **Two parsing+execution systems now coexist** and are
-deliberately coupled during a migration that is not yet finished.
+> **Note:** The former `v1/` and `v2/` packages (step-based and block/handler-based
+> dual engines) have been merged into `engine/` as of 2026-07-10.
+> `ConditionalRuleStep` (v1's recursive conditional wrapper) is gone — conditions
+> are now resolved at parse time and stored directly on `Step` objects.
 
 ```
 com.gxaysoft.project.spsscheck
-├── (root)            PrototypeCli, SpsApplication, SpsUploadSimulator, SpsUploadToDb
-├── parser/           SpssUtil, QuestionSqlParser, QuestionJsonParser,
-│                     QuestionVariableNameSelector     ← new: validates export_content as SPSS var
-├── expression/       ArithmeticExpression (recursive-descent + - * / ** ()), ConditionExpression
-├── io/               PrototypeFileReaders, AnswerPivot, OutputWriter,
-│                     StudentInfoLoader, StudentInfoEnricher, TableIdDetector
-├── model/            AnswerRecord, QuestionMapping, RecodeCase, RowContext
-├── v1/               ← Step-based engine (the live execution core)
-│   ├── model/        SpssCheckRule, RuleStep, ComputeRuleStep, RecodeRuleStep,
-│   │                 IfAssignRuleStep, ConditionalRuleStep, PositionedRuleStep,
-│   │                 RuleAvailability, SpssDatasetRule, SpssOutputRule
-│   ├── parser/       SpssRuleParser, RuleDescriptionBuilder
-│   └── executor/     RuleEngine, RuleAvailabilityChecker
-├── v2/               ← Block/Handler engine (classification + report layer today)
-│   ├── model/        RuleDefinition, RuleType (enum), RuleHandler, SpssSegment
-│   ├── parser/       BlockParser
-│   ├── executor/     BlockExecutor
-│   └── handler/      HandlerRegistry, ComputeHandler, CheckHandler,
-│                     DuplicateMarkHandler, OutputGroupHandler
-├── persistence/      DbConnection, SchemaInitializer, SpsRepository,
-│                     SourceQuestionMappingSyncService    ← new: back-fills source_question_mappings
-├── validation/       AnswerDataValidator, AnswerDataValidationReport/Issue,
-│                     StudentSpssRuleResultBuilder, StudentValidationResultBuilder,
-│                     SourceQuestionMappingFormatter     ← new: formats "var -> question_id"
-└── web/              RuleController, RuleControllerV2, RuleExecuteV2Controller, RunController,
-                      ScriptController, SnippetController, OutputRuleController,
-                      UnsupportedController, UploadController
+├── (root)               PrototypeCli, SpsApplication, V2Runner,
+│                        SpsUploadToDb, SpsUploadSimulator, SpsUploadV2
+├── config/              AnswerTableType (enum: USER_ANSWER / DOCTOR_ANSWER / STUDENT_ANSWER)
+├── engine/              ← Unified parsing + execution (former v1 + v2 merged)
+│   ├── model/           Rule, RuleType, Step, StepAction,
+│   │                    ComputeAction, RecodeAction, IfAssignAction,
+│   │                    DatasetRule, OutputRule, SegmentInfo
+│   ├── parser/          SpssParser (top-level entry), RuleParser,
+│   │                    BlockClassifier, ConditionStack, ParsedScript
+│   └── executor/        RuleExecutor, AvailabilityChecker
+├── execution/           DbRuleExecutionDataLoader (DB-based execution plumbing)
+├── parser/              SpssUtil, QuestionSqlParser, QuestionJsonParser,
+│                        QuestionVariableNameSelector   ← validates export_content as SPSS var
+├── expression/          ArithmeticExpression (recursive-descent + - * / ** ()),
+│                        ConditionExpression
+├── io/                  PrototypeFileReaders, AnswerPivot, OutputWriter,
+│                        StudentInfoLoader, StudentInfoEnricher, TableIdDetector
+├── model/               AnswerRecord, QuestionMapping, RecodeCase, RowContext
+├── persistence/         DbConnection, SchemaInitializer, SpsRepository,
+│                        ExecutionService, SourceQuestionMappingSyncService,
+│                        ScriptQuestionMappingService
+├── validation/          AnswerDataValidator, AnswerDataValidationReport/Issue,
+│                        StudentSpssRuleResultBuilder, StudentValidationResultBuilder,
+│                        SourceQuestionMappingFormatter
+└── web/                 Controllers + GlobalExceptionHandler
 ```
 
-### The two engines
+### Engine design
 
-**v1 — Step-based (`v1/`)** is the live execution core.
-`SpssRuleParser.parseRules()` → `List<SpssCheckRule>`, each carrying a
-`List<RuleStep>` (`ComputeRuleStep` / `RecodeRuleStep` / `IfAssignRuleStep` /
-`ConditionalRuleStep`). `RuleEngine.execute()` runs the step chain per row.
-`RuleAvailabilityChecker` tracks the variable chain
+`SpssParser` (entry point) parses `.sps` text into a `ParsedScript` containing
+`List<Rule>`, `List<DatasetRule>`, and `List<OutputRule>`.
+
+Each `Rule` holds a `List<Step>`, where each `Step` pairs an optional condition
+string with a `StepAction` (one of `ComputeAction`, `RecodeAction`,
+`IfAssignAction`). Conditions are resolved at parse time from DO IF nesting via
+`ConditionStack` — there is no recursive wrapping at execution time.
+
+`RuleExecutor.execute(rows, rules)` iterates rows then rules, dispatching each
+`Step.execute(row)`. `AvailabilityChecker` tracks the variable chain
 `DB columns ∪ prior-rule-targets ∪ dataset-rule-variables`.
 
-**v2 — Block/Handler-based (`v2/`)** classifies by business semantics.
-`BlockParser.parse()` splits SPS text on command boundaries into line-aware
-`SpssSegment`s, classifies each into a `RuleType`, and produces
-`RuleDefinition`s. `HandlerRegistry` dispatches to a `RuleHandler` per type.
+`RuleType` is an enum classifying rules by business semantics:
+`IDENTITY_CHECK` · `DOCUMENT_CHECK` · `MISSING_CHECK` · `RANGE_CHECK` ·
+`OUTCOME_DETERMINATION` · `DUPLICATE_MARK` · `OUTPUT_GROUP` ·
+`COMPUTE_INTERMEDIATE` · `CONDITIONAL_BLOCK`.
 
-**Critical coupling — v2 leans on v1 for execution.** `BlockParser.mergeV1Execution()`
-calls back into `SpssRuleParser.parseRules()` and copies v1's parsed `steps`
-into v2's `RuleDefinition`. `BlockExecutor.run()` also reuses v1's
-`parseOutputRules()` / `parseDatasetRules()`. v2 has no independent step
-execution today.
+Classification is by **SPSS syntax pattern**, not by Chinese target names
+(see `BlockClassifier.classifyByRecodePattern` / `classifyCompute`). Keep it
+that way — keyword-driven classification regresses quickly.
 
-### Which engine is the web app using?
-
-`RuleExecuteV2Controller` (the live `/api/v2/rules/execute` endpoint) walks the
-**v1** pipeline end-to-end: `SpssRuleParser.parseRules` → `AnswerPivot.pivot` →
-`RuleEngine.execute` → `SpssDatasetRule.execute` →
-`StudentSpssRuleResultBuilder.build`. The "V2" in the controller name refers to
-the controller generation, **not** the `v2/` engine. `BlockExecutor`/`V2Runner`
-is used only by the batch CLI scanner. Do not be misled by the name.
-
-## Execution flow (live, v1 path)
+## Execution flow
 
 ```
-.sps ──► SpssRuleParser ──► List<SpssCheckRule> + List<SpssDatasetRule> + List<SpssOutputRule>
+.sps ──► SpssParser.parse() ──► ParsedScript { rules, datasetRules, outputRules }
 .sql/.json ──► QuestionSqlParser/QuestionJsonParser ──► Map<SPSS变量名, QuestionMapping>
 .csv ──► PrototypeFileReaders ──► List<AnswerRecord(sampleKey, question_id, content, table_id)>
                   │
         AnswerPivot.pivot() ──► List<RowContext>  (EAV → wide table, one row per student)
                   │
-        RuleEngine.execute(rows, rules)       ← row-level: compute → recode → flag
-        SpssDatasetRule.execute(rows)         ← cross-row: SORT + FIRST/LAST
-        StudentSpssRuleResultBuilder.build()  ← per-student pass/fail + failure detail
+        RuleExecutor.execute(rows, rules)      ← row-level: Step.execute() per row
+        DatasetRule.execute(rows)              ← cross-row: SORT + FIRST/LAST
+        OutputRule.matches(row)                ← SELECT IF grouping → output sheet
 ```
 
-### Rule step types (`RuleStep` interface)
-- `ComputeRuleStep` — eval arithmetic expr → store in target variable
-- `RecodeRuleStep` — map source through recode cases (equals / range / missing / else) → target
-- `IfAssignRuleStep` — `IF(cond) var=val` conditional assignment
-- `ConditionalRuleStep` — wraps any step with a DO IF condition; tracks nesting via a stack in `findActiveDoIfCondition()`
+### Step action types
+
+- `ComputeAction` — evaluate arithmetic expression, store result in target variable
+- `RecodeAction` — map source through recode cases (equals / range / missing / else) into target
+- `IfAssignAction` — `IF(cond) target = value` conditional assignment
+
+Each `Step` carries an optional condition resolved from DO IF nesting at parse time.
+A `Step` with a null condition runs unconditionally; one with a condition runs only
+when the condition evaluates to true.
 
 ## Variable mapping: `bus_question` → SPSS variable names
 
@@ -157,6 +154,8 @@ name is derived from `bus_question`.
 
 The CSV sample key varies by table: 表1-1 uses `code`, 表2-1 uses `student_id`.
 `PrototypeFileReaders` reads both (`codeIndex` with `studentIndex` fallback).
+`AnswerTableType` (config package) encodes table grouping: table IDs 1/2/10 are
+USER_ANSWER (keyed by `code`), 3/4/5 are DOCTOR_ANSWER, 6/7/8 are STUDENT_ANSWER.
 
 ## Critical design rules
 
@@ -165,14 +164,14 @@ The CSV sample key varies by table: 表1-1 uses `code`, 表2-1 uses `student_id`
    (traceability) + `rule_json` (execution/edit authority) + `java_preview`
    (human only).
 
-2. **Variable availability chain:** `RuleAvailabilityChecker` tracks
+2. **Variable availability chain:** `AvailabilityChecker` tracks
    `DB columns ∪ prior-rule-targets ∪ dataset-rule-variables`. Rules that
    depend on not-yet-available variables are flagged non-executable.
 
 3. **RECODE overwrites the target field's value.** The COMPUTE→RECODE→SELECT IF
    chain depends on RECODE replacing the computed value, not just setting a flag.
 
-4. **SORT CASES must happen before FIRST/LAST assignment.** `SpssDatasetRule.execute()`
+4. **SORT CASES must happen before FIRST/LAST assignment.** `DatasetRule.execute()`
    sorts by `sortVariable`, then groups — matching SPSS semantics.
 
 5. **`table_id` filtering is critical.** CSV data may contain answers for
@@ -181,16 +180,6 @@ The CSV sample key varies by table: 表1-1 uses `code`, 表2-1 uses `student_id`
 
 6. **Rule lifecycle:** DRAFT → REVIEWING → PUBLISHED. Execution binds to a
    PUBLISHED `version_id`.
-
-## Rule type classification (v2 `RuleType` enum)
-
-`IDENTITY_CHECK` · `DOCUMENT_CHECK` · `MISSING_CHECK` · `RANGE_CHECK` ·
-`OUTCOME_DETERMINATION` · `DUPLICATE_MARK` · `OUTPUT_GROUP` ·
-`COMPUTE_INTERMEDIATE` · `CONDITIONAL_BLOCK`.
-
-Classification is by **SPSS syntax pattern**, not by Chinese target names
-(see `BlockParser.classifyByRecodePattern` / `classifyV1Rule`). Keep it that
-way — keyword-driven classification regresses quickly.
 
 ## Database schema for rule storage
 
@@ -236,17 +225,16 @@ data/         学生证件类型证件号.json (student id-type/number enrichmen
 
 - **`AGENTS.md` is stale.** It describes the single-file prototype. Trust this
   file instead, and update `AGENTS.md` when you make structural changes.
-- **Reflection into `ConditionalRuleStep.delegate`.** `SpssRuleParser.hasRecodeForTargetInSteps()`
-  and `unwrapRecodeStep()` read the private `delegate` field via reflection. Add
-  a public accessor to `ConditionalRuleStep` before refactoring that area.
-- **Hardcoded paths in `V2Runner.main()`** (`docs/sources/sql/bus_question_*.json`,
-  `docs/sources/data/学生证件类型证件号.json`) with no null checks — breaks off-host.
+- **Hardcoded paths in `V2Runner.main()`** have fallbacks via CLI args and
+  system properties (`mappingPath`, `studentPath`), but the defaults still
+  reference local fixture paths — breaks off-host unless overridden.
 - **Rule version / publish / audit service layer not implemented.** The schema
   (`sps_rule_version`, `sps_rule_change_log`) exists; the Service layer does not.
   Design doc P0 items "save parse results to DB", "publish version", "execute by
   published version_id" are still open.
 - **Line-ending noise:** working copy triggers many `LF will be replaced by CRLF`
-  warnings. A `.gitattributes` (`* text=auto eol=lf`) is missing.
+  warnings. `.gitattributes` (`* text=auto eol=lf`) is in place but may need
+  `git add --renormalize .` on existing tracked files.
 
 ## Data-handling caution
 

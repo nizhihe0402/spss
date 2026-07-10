@@ -10,6 +10,8 @@ import com.gxaysoft.project.spsscheck.engine.parser.SpssParser;
 import com.gxaysoft.project.spsscheck.io.*;
 import com.gxaysoft.project.spsscheck.model.*;
 import com.gxaysoft.project.spsscheck.parser.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.*;
 import java.util.*;
@@ -21,18 +23,21 @@ import java.util.stream.*;
  * Usage: java ... V2Runner [sps-dir] [mapping-json] [csv-data-dir]
  */
 public class V2Runner {
+    private static final Logger log = LoggerFactory.getLogger(V2Runner.class);
+
     public static void main(String[] args) throws Exception {
         Path spsDir = args.length >= 1 ? Paths.get(args[0]) : Paths.get("docs/sources/sps");
-        Path mapping = args.length >= 2 ? Paths.get(args[1]) : Paths.get("docs/sources/sql/bus_question_202606081429.json");
+        Path mapping = args.length >= 2 ? Paths.get(args[1])
+                : Paths.get(System.getProperty("mappingPath", "docs/sources/sql/bus_question_202606081429.json"));
         Path csvDir = args.length >= 3 ? Paths.get(args[2]) : Paths.get("docs/sources/cvs");
-        Path student = Paths.get("docs/sources/data/学生证件类型证件号.json");
+        Path student = Paths.get(System.getProperty("studentPath", "docs/sources/data/学生证件类型证件号.json"));
 
         List<Path> spsFiles = Files.list(spsDir)
                 .filter(p -> p.toString().endsWith(".sps") && !p.getFileName().toString().startsWith("修"))
                 .sorted().collect(Collectors.toList());
 
         // Summary
-        System.out.println("=== SPS Run (Unified Engine) ===");
+        log.info("=== SPS Run (Unified Engine) ===");
         Map<RuleType, Integer> globalCounts = new LinkedHashMap<>();
         int totalRules = 0;
 
@@ -46,11 +51,12 @@ public class V2Runner {
             }
         }
 
-        System.out.println("\n═══════════════════════════════════");
-        System.out.println("Total: " + totalRules + " rules across " + spsFiles.size() + " tables");
-        System.out.println("By type:");
+        log.info("");
+        log.info("═══════════════════════════════════");
+        log.info("Total: {} rules across {} tables", totalRules, spsFiles.size());
+        log.info("By type:");
         for (Map.Entry<RuleType, Integer> e : globalCounts.entrySet()) {
-            System.out.printf("  %-25s %d%n", e.getKey().label, e.getValue());
+            log.info("  {}{}", String.format("%-25s", e.getKey().label), e.getValue());
         }
     }
 
@@ -109,22 +115,23 @@ public class V2Runner {
     }
 
     public static void printReport(RunResult r) {
-        System.out.printf("%n─── %s ───%n", r.spsName);
-        System.out.printf("  Rules: %d%n", r.rules.size());
+        log.info("");
+        log.info("─── {} ───", r.spsName);
+        log.info("  Rules: {}", r.rules.size());
         for (Map.Entry<RuleType, Integer> e : r.typeCounts.entrySet()) {
-            System.out.printf("    %-25s %d%n", e.getKey().label, e.getValue());
+            log.info("    {}{}", String.format("%-25s", e.getKey().label), e.getValue());
         }
         if (r.skipped > 0) {
-            System.out.println("  (no data — skipped execution)");
+            log.info("  (no data — skipped execution)");
             return;
         }
-        System.out.printf("  Data: tableId=%d, %d answers, %d mappings, %d rows%n",
+        log.info("  Data: tableId={}, {} answers, {} mappings, {} rows",
                 r.tableId, r.totalAnswers, r.totalMappings, r.totalRows);
 
         if (!r.outputRules.isEmpty()) {
-            System.out.println("  Outputs:");
+            log.info("  Outputs:");
             for (OutputRule or : r.outputRules) {
-                System.out.printf("    %s%n", or.getSheetName());
+                log.info("    {}", or.getSheetName());
             }
         }
     }

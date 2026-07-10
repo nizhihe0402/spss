@@ -33,8 +33,8 @@ import java.util.regex.Pattern;
  * <p>Key differences from v1:</p>
  * <ul>
  *   <li>Produces {@link Rule} instead of {@code SpssCheckRule}</li>
- *   <li>Steps use {@code new Step(condition, action)} instead of
- *       {@code new ConditionalRuleStep(condition, delegate)}</li>
+ *   <li>Steps use {@code new Step(condition, action)} — conditions are
+ *       resolved at parse time and stored directly, no runtime wrapping</li>
  *   <li>Rule types are classified via {@link BlockClassifier}</li>
  *   <li>Variable extraction delegates to {@link SpssUtil}</li>
  * </ul>

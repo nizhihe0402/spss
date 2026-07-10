@@ -1,5 +1,6 @@
 package com.gxaysoft.project.spsscheck.execution;
 
+import com.gxaysoft.project.spsscheck.config.AnswerTableType;
 import com.gxaysoft.project.spsscheck.io.PrototypeFileReaders;
 import com.gxaysoft.project.spsscheck.model.AnswerRecord;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,7 +19,8 @@ public class DbRuleExecutionDataLoader {
     public LoadResult load(Request request) {
         request.validate();
         String answerTable = resolveAnswerTable(request.tableId, request.source);
-        boolean userAnswer = isTableOne(request.tableId);
+        AnswerTableType type = AnswerTableType.fromTableId(request.tableId);
+        boolean userAnswer = type.isUserAnswer();
         String sql = buildSqlForTable(request.tableId, answerTable);
         Object[] args = userAnswer
                 ? new Object[]{request.projectId, request.tableId, request.year, request.divisionId}
@@ -28,7 +30,7 @@ public class DbRuleExecutionDataLoader {
         PrototypeFileReaders.AnswerCsvLoadResult loadResult = new PrototypeFileReaders.AnswerCsvLoadResult();
         int rowNo = 1;
         for (Map<String, Object> row : rows) {
-            AnswerRecord record = toAnswerRecord(row, userAnswer, rowNo++);
+            AnswerRecord record = toAnswerRecord(row, type, rowNo++);
             loadResult.getAnswers().add(record);
             String studentName = stringValue(row.get("student_name"));
             if (!studentName.isEmpty()) {
@@ -40,27 +42,16 @@ public class DbRuleExecutionDataLoader {
 
     public static String resolveAnswerTable(long tableId, String source) {
         String normalizedSource = normalizeSource(source);
-        if (isTableOne(tableId)) {
-            if ("intervene".equals(normalizedSource)) {
-                throw new IllegalArgumentException("表1-X 暂不支持 source=intervene");
-            }
-            return "bus_user_answer";
-        }
-        if (isTableTwo(tableId)) {
-            return "intervene".equals(normalizedSource) ? "bus_doctor_answer_intervene" : "bus_doctor_answer";
-        }
-        if (isTableThree(tableId)) {
-            return "intervene".equals(normalizedSource) ? "bus_student_answer_intervene" : "bus_student_answer";
-        }
-        throw new IllegalArgumentException("不支持的 tableId: " + tableId);
+        return AnswerTableType.fromTableId(tableId).answerTableName(normalizedSource);
     }
 
-    public static AnswerRecord toAnswerRecord(Map<String, Object> row, boolean userAnswer, int rowNumber) {
+    public static AnswerRecord toAnswerRecord(Map<String, Object> row, AnswerTableType type, int rowNumber) {
         long rawId = asLong(row.get("id"), -1L);
         long questionId = asLong(row.get("question_id"), -1L);
         long optionId = asLong(row.get("option_id"), 0L);
-        long sampleId = asLong(row.get(userAnswer ? "code" : "student_id"), -1L);
-        String sampleKey = sampleId > 0 ? String.valueOf(sampleId) : stringValue(row.get(userAnswer ? "code" : "student_id"));
+        String idColumn = type.studentIdColumn();
+        long sampleId = asLong(row.get(idColumn), -1L);
+        String sampleKey = sampleId > 0 ? String.valueOf(sampleId) : stringValue(row.get(idColumn));
         return new AnswerRecord(
                 rawId,
                 rowNumber,
@@ -78,7 +69,8 @@ public class DbRuleExecutionDataLoader {
     }
 
     public static String buildSqlForTable(long tableId, String answerTable) {
-        return buildSql(answerTable, isTableOne(tableId), isTableTwo(tableId));
+        AnswerTableType type = AnswerTableType.fromTableId(tableId);
+        return buildSql(answerTable, type.isUserAnswer(), type.hasTimesColumn());
     }
 
     private static String buildSql(String answerTable, boolean userAnswer, boolean hasTimesColumn) {
@@ -108,18 +100,6 @@ public class DbRuleExecutionDataLoader {
             throw new IllegalArgumentException("source 只支持 normal 或 intervene");
         }
         return value;
-    }
-
-    private static boolean isTableOne(long tableId) {
-        return tableId == 1L || tableId == 2L || tableId == 10L;
-    }
-
-    private static boolean isTableTwo(long tableId) {
-        return tableId == 3L || tableId == 4L || tableId == 5L;
-    }
-
-    private static boolean isTableThree(long tableId) {
-        return tableId == 6L || tableId == 7L || tableId == 8L;
     }
 
     private static long asLong(Object value, long fallback) {
@@ -152,7 +132,8 @@ public class DbRuleExecutionDataLoader {
             if (tableId <= 0) throw new IllegalArgumentException("tableId 必填");
             if (divisionId <= 0) throw new IllegalArgumentException("divisionId 必填");
             if (year == null || year.trim().isEmpty()) throw new IllegalArgumentException("year 必填");
-            if ((isTableTwo(tableId) || isTableThree(tableId)) && schoolId <= 0) {
+            AnswerTableType type = AnswerTableType.fromTableId(tableId);
+            if (!type.isUserAnswer() && schoolId <= 0) {
                 throw new IllegalArgumentException("表2-X/表3-X 执行必须传 schoolId");
             }
         }

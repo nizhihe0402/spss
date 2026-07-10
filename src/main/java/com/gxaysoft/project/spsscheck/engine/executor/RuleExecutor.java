@@ -35,7 +35,7 @@ public final class RuleExecutor {
                         row.put(rule.getTarget(), computed);
                     }
                 } else {
-                    // 有 Step — 扁平化执行（无反射！无 ConditionalRuleStep 递归！）
+                    // 有 Step — 扁平化执行（条件在解析时已解析，无需运行时包装！）
                     for (Step step : rule.getSteps()) {
                         step.execute(row);
                     }
