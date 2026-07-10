@@ -6,6 +6,10 @@ ALTER TABLE sps_rule ADD COLUMN IF NOT EXISTS line_count INT AFTER end_line;
 ALTER TABLE sps_rule ADD COLUMN IF NOT EXISTS segment_title VARCHAR(500) AFTER line_count;
 ALTER TABLE sps_rule ADD COLUMN IF NOT EXISTS split_reason VARCHAR(200) AFTER segment_title;
 
+ALTER TABLE sps_script ADD COLUMN IF NOT EXISTS project_id BIGINT AFTER table_id;
+ALTER TABLE sps_script ADD COLUMN IF NOT EXISTS project_type VARCHAR(20) AFTER project_id;
+ALTER TABLE sps_script ADD COLUMN IF NOT EXISTS year VARCHAR(10) AFTER project_type;
+
 CREATE TABLE IF NOT EXISTS sps_script_question_mapping (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     script_id BIGINT NOT NULL,

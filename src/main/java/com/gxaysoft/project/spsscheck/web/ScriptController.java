@@ -36,6 +36,7 @@ public class ScriptController {
         return jdbc.queryForList(
             "SELECT id, script_name AS name, parse_status AS parse, status, " +
             "version_no AS ver, (SELECT COUNT(*) FROM sps_rule WHERE script_id=s.id) AS rules, " +
+            "table_id AS tableId, project_id AS projectId, project_type AS projectType, year, " +
             "DATE_FORMAT(created_time, '%Y-%m-%d %H:%i') AS time " +
             "FROM sps_script s ORDER BY id DESC");
     }

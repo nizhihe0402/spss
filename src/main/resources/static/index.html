@@ -82,6 +82,47 @@ pre{margin:0}
 <div class="layui-card">
   <div class="layui-card-header">上传 .sps 脚本文件</div>
   <div class="layui-card-body">
+    <div class="layui-form layui-form-item">
+      <div class="layui-inline" style="margin-bottom:10px">
+        <label class="layui-form-label" style="width:70px">标题</label>
+        <div class="layui-input-inline" style="width:220px">
+          <input id="uploadTitle" class="layui-input" placeholder="脚本显示名称（留空自动提取）">
+        </div>
+      </div>
+      <div class="layui-inline" style="margin-bottom:10px">
+        <label class="layui-form-label" style="width:70px">项目</label>
+        <div class="layui-input-inline" style="width:150px">
+          <input id="uploadProjectId" class="layui-input" value="2" placeholder="projectId">
+        </div>
+      </div>
+      <div class="layui-inline" style="margin-bottom:10px">
+        <label class="layui-form-label" style="width:70px">年份</label>
+        <div class="layui-input-inline" style="width:120px">
+          <input id="uploadYear" class="layui-input" value="2025" placeholder="year">
+        </div>
+      </div>
+      <div class="layui-inline" style="margin-bottom:10px">
+        <label class="layui-form-label" style="width:70px">表</label>
+        <div class="layui-input-inline" style="width:150px">
+          <select id="uploadTableId">
+            <option value="">-- 自动检测 --</option>
+            <option value="1">表1-1</option><option value="2">表1-2</option><option value="10">表1-3</option>
+            <option value="3">表2-1</option><option value="4">表2-2</option><option value="5">表2-3</option>
+            <option value="6">表3-1</option><option value="7">表3-2</option><option value="8">表3-3</option>
+          </select>
+        </div>
+      </div>
+      <div class="layui-inline" style="margin-bottom:10px">
+        <label class="layui-form-label" style="width:90px">项目类型</label>
+        <div class="layui-input-inline" style="width:150px">
+          <select id="uploadProjectType">
+            <option value="">-- 请选择 --</option>
+            <option value="常见病">常见病</option>
+            <option value="综合干预">综合干预</option>
+          </select>
+        </div>
+      </div>
+    </div>
     <div class="layui-upload-drag" id="uploadBox">
       <i class="layui-icon layui-icon-upload" style="font-size:40px;color:#999"></i>
       <p>点击或将文件拖拽到这里上传</p>
@@ -375,6 +416,13 @@ function loadScripts(){
 function initUpload(){
   upload.render({
     elem:'#uploadBox', url:'/api/upload', accept:'file', exts:'sps',
+    data: {
+      title: function(){ return $('#uploadTitle').val(); },
+      projectId: function(){ return $('#uploadProjectId').val(); },
+      year: function(){ return $('#uploadYear').val(); },
+      tableId: function(){ return $('#uploadTableId').val(); },
+      projectType: function(){ return $('#uploadProjectType').val(); }
+    },
     done:function(res){
       if(res.code==0){
         $('#uploadResult').html('<div class="layui-bg-green" style="padding:10px;color:#fff">上传成功! 脚本ID='+res.scriptId

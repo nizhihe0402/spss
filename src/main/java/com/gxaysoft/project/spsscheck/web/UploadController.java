@@ -34,8 +34,12 @@ public class UploadController {
 
     @PostMapping("/upload")
     public Map<String, Object> upload(@RequestParam("file") MultipartFile file,
+                                      @RequestParam(value = "title", required = false) String title,
                                       @RequestParam(value = "tableId", required = false) Long tableId,
-                                      @RequestParam(value = "table_id", required = false) Long tableId2) {
+                                      @RequestParam(value = "table_id", required = false) Long tableId2,
+                                      @RequestParam(value = "projectId", required = false) Long projectId,
+                                      @RequestParam(value = "year", required = false) String year,
+                                      @RequestParam(value = "projectType", required = false) String projectType) {
         Map<String, Object> result = new LinkedHashMap<>();
         try {
             byte[] rawBytes = file.getBytes();
@@ -43,22 +47,30 @@ public class UploadController {
             String spsText = readSpsBytes(rawBytes);
             String name = extractScriptName(spsText, file.getOriginalFilename());
             long scriptTableId = resolveScriptTableId(tableId, tableId2, name);
+            String scriptTitle = (title != null && !title.trim().isEmpty()) ? title.trim() : name;
+            Long scriptProjectId = (projectId != null && projectId.longValue() > 0) ? projectId : null;
+            String scriptYear = (year != null && !year.trim().isEmpty()) ? year.trim() : null;
+            String scriptProjectType = (projectType != null && !projectType.trim().isEmpty()) ? projectType.trim() : null;
 
             // Engine: unified parsing
             ParsedScript parsed = SpssParser.parse(spsText);
             List<Rule> rules = parsed.getRules();
             List<OutputRule> outputRules = parsed.getOutputRules();
 
-            // Insert script
+            // Insert script with extended metadata
             KeyHolder keyHolder = new GeneratedKeyHolder();
+            String insertSql = "INSERT INTO sps_script (script_name, script_content, table_code, table_id, " +
+                "project_id, project_type, year, parse_status, version_no, status) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'PARSED', 1, 'DRAFT')";
             jdbc.update(conn -> {
-                PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO sps_script (script_name, script_content, table_code, table_id, parse_status, version_no, status) " +
-                    "VALUES (?, ?, ?, ?, 'PARSED', 1, 'DRAFT')", Statement.RETURN_GENERATED_KEYS);
-                ps.setString(1, name);
+                PreparedStatement ps = conn.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS);
+                ps.setString(1, scriptTitle);
                 ps.setString(2, spsText);
                 ps.setString(3, name);
                 ps.setLong(4, scriptTableId);
+                if (scriptProjectId != null) ps.setLong(5, scriptProjectId); else ps.setNull(5, java.sql.Types.BIGINT);
+                ps.setString(6, scriptProjectType);
+                ps.setString(7, scriptYear);
                 return ps;
             }, keyHolder);
             long scriptId = keyHolder.getKey().longValue();
