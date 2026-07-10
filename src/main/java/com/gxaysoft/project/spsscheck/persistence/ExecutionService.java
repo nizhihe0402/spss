@@ -47,12 +47,19 @@ public class ExecutionService {
         try {
             Map<String, Object> result = executeCore(loaded.getCsvLoad(), request.scriptId,
                     request.tableId, null, null, false, null);
-            // Persist results
+            // Persist results — best effort, don't lose execution result on failure
             if (result.get("data") instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> spssResult = (Map<String, Object>) result.get("data");
-                persistenceService.saveDbExecutionResult(request, loaded.getAnswerTable(),
-                        loaded.getCsvLoad(), spssResult);
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> spssResult = (Map<String, Object>) result.get("data");
+                    RuleExecutionPersistenceService.SaveSummary saveResult =
+                        persistenceService.saveDbExecutionResult(request, loaded.getAnswerTable(),
+                                loaded.getCsvLoad(), spssResult);
+                    result.put("persist", saveResult.toMap());
+                } catch (Exception pe) {
+                    log.error("保存执行结果到_clean/_fail失败", pe);
+                    result.put("persistError", pe.getMessage());
+                }
             }
             return result;
         } catch (Exception e) {

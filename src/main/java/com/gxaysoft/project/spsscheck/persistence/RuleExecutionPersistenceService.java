@@ -46,19 +46,35 @@ public class RuleExecutionPersistenceService {
         String failTable = failTableName(answerTable);
         long cleanTaskId = System.currentTimeMillis();
 
+        log.info("开始保存执行结果: answerTable={}, cleanTable={}, failTable={}", answerTable, cleanTable, failTable);
+
         ensureCleanTable(answerTable, cleanTable);
         ensureFailTable(answerTable, failTable);
 
-        List<Long> sourceIds = allSourceIds(csvLoad);
         List<Long> cleanIds = cleanSourceIds(csvLoad, spssResult);
         List<FailDetail> failures = failDetails(spssResult);
+        log.info("清洗统计: answers={}, cleanIds={}, failures={}",
+                csvLoad != null && csvLoad.getAnswers() != null ? csvLoad.getAnswers().size() : 0,
+                cleanIds.size(), failures.size());
+
+        // 打印前几个失败详情用于调试
+        if (!failures.isEmpty()) {
+            FailDetail first = failures.get(0);
+            log.info("失败示例: studentKey={}, ruleCode={}, sourceId(from answer map)={}",
+                    first.studentKey, first.ruleCode,
+                    csvLoad.getAnswers().stream()
+                        .filter(a -> first.studentKey.equals(a.getSampleKey()))
+                        .findFirst().map(a -> String.valueOf(a.getRawId())).orElse("NOT FOUND"));
+        }
+
         clearPreviousResults(request, answerTable, cleanTable, failTable, cleanIds);
 
         int cleanRows = insertCleanRows(answerTable, cleanTable, cleanIds, cleanTaskId);
         int correctionRows = updateCleanCorrections(request, cleanTable, csvLoad, correctionCleanValues);
         int failRows = insertFailRows(request, answerTable, failTable, failures, csvLoad, cleanTaskId);
 
-        log.info("执行结果已保存: cleanTable={}, cleanRows={}, failRows={}", cleanTable, cleanRows, failRows);
+        log.info("执行结果已保存: cleanTable={}, cleanRows={}, failRows={}, correctionRows={}",
+                cleanTable, cleanRows, failRows, correctionRows);
         return new SaveSummary(cleanTable, failTable, cleanRows, failRows, correctionRows, cleanTaskId);
     }
 
