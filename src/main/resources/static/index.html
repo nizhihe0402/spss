@@ -674,12 +674,34 @@ function previewSnippet(){
     data:JSON.stringify({spsText:text}), success:function(res){
       if(res.code!=0){ $('#previewResult').html('<div style="color:red">'+res.msg+'</div>'); return; }
       var html = '<div style="color:green">共解析出 '+res.totalRules+' 条规则, '+res.totalOutputs+' 个输出分组</div>';
-      html += '<table class="layui-table layui-table-sm" style="margin-top:8px"><tr><th>目标变量</th><th>类型</th><th>说明</th></tr>';
       res.rules.forEach(function(r){
-        html += '<tr><td>'+htmlEscape(r.target)+'</td><td><span class="tag '+r.type+'">'+r.type+'</span></td><td>'+htmlEscape(r.description||'')+'</td></tr>';
+        html += '<div style="margin:8px 0;padding:8px;background:#f8f8f8;border-left:3px solid #5FB878;font-size:13px">';
+        html += '<b>'+htmlEscape(r.target||'')+'</b> ';
+        html += '<span class="tag '+r.type+'">'+htmlEscape(r.typeLabel||r.type)+'</span> ';
+        html += '<span style="color:#666">'+htmlEscape(r.description||'')+'</span>';
+        // Steps
+        if(r.steps && r.steps.length>0){
+          html += '<div style="margin-top:4px">';
+          r.steps.forEach(function(s){
+            var cls = s.type==='RECODE'?'RECODE':(s.type==='IF_ASSIGN'?'IF_ASSIGN':'');
+            html += '<div class="step-card'+(cls?' '+cls:'')+'">#'+s.no+' ';
+            if(s.condition) html += '<span style="color:#FF8C00">WHEN:'+htmlEscape(s.condition)+'</span> ';
+            html += '<span class="tag">'+s.type+'</span> ';
+            if(s.expression) html += '<code>'+htmlEscape(s.expression)+'</code>';
+            if(s.source) html += ' '+htmlEscape(s.source);
+            if(s.value) html += ' = '+htmlEscape(s.value);
+            html += ' → <b>'+htmlEscape(s.target||'')+'</b>';
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+        // Java preview
+        if(r.javaPreview){
+          html += '<pre style="margin-top:4px;font-size:11px;color:#888;max-height:40px;overflow:hidden">'+htmlEscape(r.javaPreview)+'</pre>';
+        }
+        html += '</div>';
       });
-      html += '</table>';
-      $('#previewResult').html(html);
+      $('#previewResult').html(html||'<span style="color:#999">无规则</span>');
       $('#snippetResult').html('');
     }, error:function(){ $('#snippetResult').html(''); }
   });

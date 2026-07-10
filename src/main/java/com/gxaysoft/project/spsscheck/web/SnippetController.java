@@ -146,8 +146,35 @@ public class SnippetController {
                 m.put("description", r.getDescription());
                 m.put("sources", sources);
                 m.put("expression", r.getExpression());
+                m.put("javaPreview", r.getJavaPreview());
+                m.put("spssSource", truncate(r.getSpssSource() != null ? r.getSpssSource() : "", 500));
                 m.put("correctionEnabled", correction.enabled ? 1 : 0);
                 m.put("correctionDescription", correction.description);
+
+                // 步骤列表
+                List<Map<String, Object>> stepList = new ArrayList<>();
+                if (r.getSteps() != null) {
+                    int sno = 0;
+                    for (com.gxaysoft.project.spsscheck.engine.model.Step s : r.getSteps()) {
+                        sno++;
+                        Map<String, Object> sm = new LinkedHashMap<>();
+                        sm.put("no", sno);
+                        sm.put("condition", s.getCondition());
+                        sm.put("target", s.getTarget());
+                        if (s.getAction() instanceof com.gxaysoft.project.spsscheck.engine.model.ComputeAction) {
+                            sm.put("type", "COMPUTE");
+                            sm.put("expression", ((com.gxaysoft.project.spsscheck.engine.model.ComputeAction) s.getAction()).getExpression());
+                        } else if (s.getAction() instanceof com.gxaysoft.project.spsscheck.engine.model.RecodeAction) {
+                            sm.put("type", "RECODE");
+                            sm.put("source", ((com.gxaysoft.project.spsscheck.engine.model.RecodeAction) s.getAction()).getSource());
+                        } else if (s.getAction() instanceof com.gxaysoft.project.spsscheck.engine.model.IfAssignAction) {
+                            sm.put("type", "IF_ASSIGN");
+                            sm.put("value", ((com.gxaysoft.project.spsscheck.engine.model.IfAssignAction) s.getAction()).getValue());
+                        }
+                        stepList.add(sm);
+                    }
+                }
+                m.put("steps", stepList);
                 ruleList.add(m);
             }
 
