@@ -817,6 +817,7 @@ function initRun(){
       });
       $('#runTableId').html(html);
       form.render('select');
+      updateRunSchoolVisibility(); // 表列表加载完后刷新学校行可见性
     });
   }
   loadRunTables();
@@ -830,7 +831,11 @@ function initRun(){
       if(meta.projectId){ loadRunTables(meta.projectId); }
       // 延迟设置表（等表列表加载完）
       if(meta.tableId){
-        setTimeout(function(){ $('#runTableId').val(meta.tableId); form.render('select'); }, 500);
+        setTimeout(function(){
+          $('#runTableId').val(meta.tableId);
+          form.render('select');
+          updateRunSchoolVisibility();
+        }, 500);
       }
     }
   });
