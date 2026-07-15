@@ -136,7 +136,10 @@ public final class RuleParser {
         // ── Pass 4: DO IF 块聚合（中间变量并入汇规则）──────────────────
         List<Rule> aggregated = aggregateDoIfBlocks(spssText, rules, anchors, labels);
 
-        List<Rule> merged = mergeInitDeclarations(aggregated, labels);
+        // ── Pass 5: 同名目标相邻段合并（脚本作者迭代写法）──────────────
+        List<Rule> sameTargetMerged = mergeSameTargetSegments(spssText, aggregated, anchors, labels);
+
+        List<Rule> merged = mergeInitDeclarations(sameTargetMerged, labels);
         for (Rule r : merged) {
             r.setJavaPreview(buildJavaPreview(r));
             r.setExecutionChain(buildExecutionChain(r));
@@ -448,6 +451,7 @@ public final class RuleParser {
                 rule.setSourceVariables(sourceVars);
                 rule.setJavaPreview(toJavaPreviewFromSteps(sinkDisplayName, steps));
                 rule.setType(classifyFromBlock(rule));
+                anchors.put(rule, blockStart);
                 rebuilt.add(rule);
             }
             if (rebuilt.isEmpty() || !covered.containsAll(anchoredTargets)) {
@@ -620,6 +624,173 @@ public final class RuleParser {
             }
         }
         return blocks;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Same-target adjacent segment merging
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 同名目标相邻代码段合并（脚本作者迭代写法，如表2-1 身份证出生日期异常
+     * 被两个相邻 DO IF 块先后计算）。合并条件（全部满足）：
+     * <ul>
+     *   <li>同一目标变量存在 ≥2 条"实体"规则（有步骤或有非 init 表达式）；</li>
+     *   <li>相邻成员在原文中不重叠（重叠碎片如 RECODE 链内嵌 IF 暂不处理）；</li>
+     *   <li>成员之间的间隙只含统计/标签/输出语句或同目标赋值（含 $SYSMIS 重置），
+     *       一旦隔着其他目标变量的计算段即不合并。</li>
+     * </ul>
+     * 合并后步骤按源码顺序串接（含中间的 $SYSMIS 重置步骤），与 SPSS 逐行
+     * 执行、后算覆盖前算的语义一致。
+     */
+    private static List<Rule> mergeSameTargetSegments(String text, List<Rule> rules,
+                                                      Map<Rule, Integer> anchors,
+                                                      Map<String, String> labels) {
+        // 按目标分组（保持首次出现顺序）
+        Map<String, List<Rule>> byTarget = new LinkedHashMap<>();
+        for (Rule r : rules) {
+            if (r.getTarget() == null || anchors.get(r) == null) {
+                continue;
+            }
+            String key = SpssUtil.normalize(r.getTarget());
+            List<Rule> group = byTarget.get(key);
+            if (group == null) {
+                group = new ArrayList<>();
+                byTarget.put(key, group);
+            }
+            group.add(r);
+        }
+
+        List<Rule> result = new ArrayList<>(rules);
+        for (Map.Entry<String, List<Rule>> entry : byTarget.entrySet()) {
+            String targetKey = entry.getKey();
+            List<Rule> members = new ArrayList<>(entry.getValue());
+            if (members.size() < 2) {
+                continue;
+            }
+            members.sort(new Comparator<Rule>() {
+                @Override
+                public int compare(Rule a, Rule b) {
+                    return Integer.compare(anchors.get(a), anchors.get(b));
+                }
+            });
+
+            // 按相邻性切分为若干 run
+            List<List<Rule>> runs = new ArrayList<>();
+            List<Rule> current = new ArrayList<>();
+            current.add(members.get(0));
+            for (int i = 1; i < members.size(); i++) {
+                Rule prev = current.get(current.size() - 1);
+                Rule next = members.get(i);
+                if (isAdjacentSameTarget(text, prev, next, anchors, targetKey)) {
+                    current.add(next);
+                } else {
+                    runs.add(current);
+                    current = new ArrayList<>();
+                    current.add(next);
+                }
+            }
+            runs.add(current);
+
+            for (List<Rule> run : runs) {
+                // ≥2 个成员且至少 1 个实体成员才合并：
+                // - 实体≥2：迭代写法（多版计算串接）
+                // - init+实体：init 降级为 $SYSMIS 步骤（mergeInitDeclarations 依赖
+                //   列表相邻，遇到连续 init 会静默丢弃前一个，按文本相邻合并更可靠）
+                int realCount = 0;
+                for (Rule r : run) {
+                    if (!isInitRule(r)) {
+                        realCount++;
+                    }
+                }
+                if (run.size() < 2 || realCount < 1) {
+                    continue;
+                }
+                Rule mergedRule = buildSameTargetMergedRule(run, labels);
+                int insertAt = result.indexOf(run.get(0));
+                result.removeAll(run);
+                result.add(insertAt, mergedRule);
+                anchors.put(mergedRule, anchors.get(run.get(0)));
+            }
+        }
+        return result;
+    }
+
+    /** 判断相邻性：不重叠 + 间隙内没有其他目标变量的赋值语句。 */
+    private static boolean isAdjacentSameTarget(String text, Rule prev, Rule next,
+                                                Map<Rule, Integer> anchors, String targetKey) {
+        int prevStart = anchors.get(prev);
+        int nextStart = anchors.get(next);
+        int gapStart;
+        if (isInitRule(prev)) {
+            // init 的 spssSource 因块结束启发式会越界延伸——直接从锚点扫起
+            // （init 语句本身是同目标赋值，间隙检查天然放行）
+            gapStart = prevStart;
+        } else {
+            int prevLen = prev.getSpssSource() != null ? prev.getSpssSource().length() : 0;
+            gapStart = prevStart + prevLen;
+            if (gapStart > nextStart) {
+                return false; // 真实重叠碎片（如 RECODE 链内嵌 IF），不处理
+            }
+        }
+        for (PositionedStep ps : parseBlockStatements(text, gapStart, nextStart)) {
+            if (!SpssUtil.normalize(ps.step.getTarget()).equals(targetKey)) {
+                return false; // 间隙内有其他目标的计算段
+            }
+        }
+        return true;
+    }
+
+    /** 空步骤 + $SYSMIS 表达式的初始化规则。 */
+    private static boolean isInitRule(Rule rule) {
+        return rule.getSteps().isEmpty()
+                && rule.getExpression() != null
+                && rule.getExpression().trim().equalsIgnoreCase("$SYSMIS");
+    }
+
+    /** 将同名 run 的成员按序串接为一条规则（init 成员降级为 $SYSMIS 步骤）。 */
+    private static Rule buildSameTargetMergedRule(List<Rule> run, Map<String, String> labels) {
+        String displayTarget = null;
+        String description = null;
+        List<Step> steps = new ArrayList<>();
+        StringBuilder source = new StringBuilder();
+        LinkedHashMap<String, String> sourceVars = new LinkedHashMap<>();
+
+        for (Rule member : run) {
+            if (displayTarget == null && !isInitRule(member)) {
+                displayTarget = member.getTarget();
+            }
+            if (description == null && member.getDescription() != null) {
+                description = member.getDescription();
+            }
+            if (!member.getSteps().isEmpty()) {
+                steps.addAll(member.getSteps());
+            } else if (member.getExpression() != null && !member.getExpression().isEmpty()) {
+                // init($SYSMIS) 或无条件 COMPUTE 降级为顺序步骤
+                steps.add(new Step(null, new ComputeAction(member.getTarget(), member.getExpression())));
+            }
+            if (member.getSpssSource() != null && !member.getSpssSource().isEmpty()) {
+                if (source.length() > 0) {
+                    source.append("\n\n");
+                }
+                source.append(member.getSpssSource());
+            }
+            if (member.getSourceVariables() != null) {
+                for (String var : member.getSourceVariables()) {
+                    sourceVars.put(SpssUtil.normalize(var), var);
+                }
+            }
+        }
+
+        Rule rule = new Rule();
+        rule.setTarget(displayTarget != null ? displayTarget : run.get(0).getTarget());
+        rule.setDescription(description != null ? description
+                : labels.get(SpssUtil.normalize(rule.getTarget())));
+        rule.setSteps(steps);
+        rule.setSpssSource(source.toString());
+        rule.setSourceVariables(new ArrayList<>(sourceVars.values()));
+        rule.setJavaPreview(toJavaPreviewFromSteps(rule.getTarget(), steps));
+        rule.setType(classifyFromBlock(rule));
+        return rule;
     }
 
     // ══════════════════════════════════════════════════════════════════════
