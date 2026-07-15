@@ -23,7 +23,6 @@ public final class BlockClassifier {
         if (KNOWN_INTERMEDIATE.contains(targetUpper)) return RuleType.COMPUTE_INTERMEDIATE;
         if (isIdCheckExpression(exprUpper)) return RuleType.IDENTITY_CHECK;
         if (hasDocSources(sourceVars)) return RuleType.DOCUMENT_CHECK;
-        if (exprUpper.matches("^\\s*0\\s*$") || exprUpper.contains("$SYSMIS")) return RuleType.COMPUTE_INTERMEDIATE;
         return RuleType.COMPUTE_INTERMEDIATE;
     }
 
@@ -36,7 +35,6 @@ public final class BlockClassifier {
             return RuleType.RANGE_CHECK;
         if (DOC_SOURCE_PAT.matcher(source).find() || DOC_SOURCE_PAT.matcher(block).find())
             return RuleType.DOCUMENT_CHECK;
-        if (blockUpper.contains(" INTO ")) return RuleType.MISSING_CHECK;
         return RuleType.MISSING_CHECK;
     }
 

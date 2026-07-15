@@ -215,9 +215,14 @@ public class ArithmeticExpression {
                 int l = len.intValue();
                 if (s < 0 || s >= str.length()) return null;
                 int end = Math.min(s + l, str.length());
-                // Stored as a pseudo-number (hashCode for later comparison) — this is limited
-                // CHAR.SUBSTR is usually used with = "" comparison, handled in ConditionExpression
-                return BigDecimal.valueOf(str.substring(s, end).hashCode());
+                // 数值子串按真实数值返回；非数值子串在算术上下文无意义 → 返回 null。
+                //（= "" / 字符串比较会走 evalStringFunction 里的 CHAR.SUBSTR，返回真正的子串）
+                String sub = str.substring(s, end).trim();
+                try {
+                    return new BigDecimal(sub);
+                } catch (NumberFormatException ex) {
+                    return null;
+                }
             }
             case "MISSING": {
                 // MISSING(var) → 1 if null/empty, 0 otherwise
