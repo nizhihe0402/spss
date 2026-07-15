@@ -92,6 +92,25 @@ public class RuleParserDoIfConditionTest {
         }
     }
 
+    /** 嵌套 DO IF：内层步骤的条件应为整栈 AND 链接，而不是只取栈顶（丢失外层 ZJTYPE=1）。 */
+    @Test
+    public void nestedDoIfStepsGetAndChainedConditions() {
+        String script =
+                "DO IF (ZJTYPE = 1).\n" +
+                "    DO IF (LENGTH(RTRIM(SFZ)) = 18).\n" +
+                "        COMPUTE 性别位 = NUMBER(CHAR.SUBSTR(SFZ, 17, 1), F8.0).\n" +
+                "    END IF.\n" +
+                "END IF.\n" +
+                "EXECUTE.\n";
+        ParsedScript parsed = SpssParser.parse(script);
+        Rule rule = findRuleByTarget(parsed, "性别位");
+        assertNotNull(rule, "应解析出 性别位 规则");
+        assertEquals(1, rule.getSteps().size());
+        assertEquals("(ZJTYPE = 1) AND (LENGTH(RTRIM(SFZ)) = 18)",
+                rule.getSteps().get(0).getCondition(),
+                "嵌套 DO IF 条件应 AND 链接且各自加括号");
+    }
+
     private static Rule findRuleByTarget(ParsedScript script, String target) {
         for (Rule rule : script.getRules()) {
             if (target.equals(rule.getTarget())) {

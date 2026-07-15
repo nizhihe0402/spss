@@ -14,10 +14,13 @@ import com.gxaysoft.project.spsscheck.parser.SpssUtil;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -71,6 +74,8 @@ public final class RuleParser {
     public static List<Rule> parseRules(String spssText) {
         Map<String, String> labels = parseLabels(spssText);
         List<Rule> rules = new ArrayList<>();
+        // 规则在原文中的锚点位置（用于 DO IF 块聚合判定规则归属）
+        Map<Rule, Integer> anchors = new IdentityHashMap<>();
 
         // ── Pass 1: COMPUTE rules ─────────────────────────────────────
         Matcher matcher = COMPUTE_PATTERN.matcher(spssText);
@@ -120,14 +125,18 @@ public final class RuleParser {
             rule.setType(rule.getSteps().isEmpty()
                     ? BlockClassifier.classifyCompute(target, expression, sourceVars)
                     : classifyFromBlock(rule));
+            anchors.put(rule, matcher.start());
             rules.add(rule);
         }
 
         // ── Pass 2 & 3: RECODE INTO and standalone IF ─────────────────
-        rules.addAll(parseRecodeIntoRules(spssText, labels));
-        rules.addAll(parseStandaloneIfAssignRules(spssText, labels));
+        rules.addAll(parseRecodeIntoRules(spssText, labels, anchors));
+        rules.addAll(parseStandaloneIfAssignRules(spssText, labels, anchors));
 
-        List<Rule> merged = mergeInitDeclarations(rules, labels);
+        // ── Pass 4: DO IF 块聚合（中间变量并入汇规则）──────────────────
+        List<Rule> aggregated = aggregateDoIfBlocks(spssText, rules, anchors, labels);
+
+        List<Rule> merged = mergeInitDeclarations(aggregated, labels);
         for (Rule r : merged) {
             r.setJavaPreview(buildJavaPreview(r));
             r.setExecutionChain(buildExecutionChain(r));
@@ -299,7 +308,11 @@ public final class RuleParser {
                     allSteps.add(new Step(null, new ComputeAction(rule.getTarget(), rule.getExpression())));
                 }
 
-                List<String> srcVars = extractSourceVariablesFromSteps(allSteps, rule.getTarget());
+                // init($SYSMIS) 不引入源变量：沿用规则已算好的 sourceVariables
+                // （聚合规则的中间变量过滤不能被重提取覆盖）
+                List<String> srcVars = rule.getSourceVariables() != null
+                        ? new ArrayList<>(rule.getSourceVariables())
+                        : extractSourceVariablesFromSteps(allSteps, rule.getTarget());
                 Rule mergedRule = new Rule();
                 mergedRule.setTarget(rule.getTarget());
                 mergedRule.setExpression(rule.getExpression());
@@ -328,10 +341,293 @@ public final class RuleParser {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // DO IF block aggregation
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * DO IF 块聚合（设计文档：2026-07-15-doif-block-aggregation-design.md）。
+     *
+     * <p>对每个顶层 DO IF ... END IF 块：若块内锚定了 ≥2 个不同目标的规则、
+     * 且存在被块内其他步骤消费的中间目标，则按「汇变量」重建规则 —— 每个汇
+     * （不被块内消费的目标）一条规则，步骤为该汇在块内的依赖闭包（含中间变量
+     * 计算、常量赋值分支），按源码顺序排列；原碎片规则被替换。</p>
+     *
+     * <p>无中间变量的多目标块（如血压块、教室代码块）与单目标块保持原样。</p>
+     */
+    private static List<Rule> aggregateDoIfBlocks(String text, List<Rule> rules,
+                                                  Map<Rule, Integer> anchors,
+                                                  Map<String, String> labels) {
+        List<Rule> result = new ArrayList<>(rules);
+        for (int[] block : scanTopLevelDoIfBlocks(text)) {
+            int blockStart = block[0];
+            int blockEnd = block[1];
+
+            // 块内锚定的规则
+            List<Rule> inBlock = new ArrayList<>();
+            for (Rule r : result) {
+                Integer pos = anchors.get(r);
+                if (pos != null && pos >= blockStart && pos < blockEnd) {
+                    inBlock.add(r);
+                }
+            }
+            Set<String> anchoredTargets = new LinkedHashSet<>();
+            for (Rule r : inBlock) {
+                anchoredTargets.add(SpssUtil.normalize(r.getTarget()));
+            }
+            if (anchoredTargets.size() < 2) {
+                continue;
+            }
+
+            // 重扫块内全部语句（含被 Pass 1 跳过的常量赋值 COMPUTE）
+            List<PositionedStep> statements = parseBlockStatements(text, blockStart, blockEnd);
+            Set<String> blockTargets = new LinkedHashSet<>();
+            for (PositionedStep ps : statements) {
+                blockTargets.add(SpssUtil.normalize(ps.step.getTarget()));
+            }
+            if (!blockTargets.containsAll(anchoredTargets)) {
+                // 锚定规则的目标未被重扫覆盖（如步骤跨块的 RECODE 链）— 保守跳过
+                continue;
+            }
+
+            // 消费关系：某目标出现在其他目标步骤的源变量中 → 中间变量
+            Set<String> consumed = new LinkedHashSet<>();
+            for (PositionedStep ps : statements) {
+                String stepTarget = SpssUtil.normalize(ps.step.getTarget());
+                for (String var : ps.step.sourceVariables()) {
+                    String normalized = SpssUtil.normalize(var);
+                    if (blockTargets.contains(normalized) && !normalized.equals(stepTarget)) {
+                        consumed.add(normalized);
+                    }
+                }
+            }
+            if (consumed.isEmpty()) {
+                continue; // 无中间变量 — 多汇块保持独立规则
+            }
+            List<String> sinks = new ArrayList<>();
+            for (String target : blockTargets) {
+                if (!consumed.contains(target)) {
+                    sinks.add(target);
+                }
+            }
+            if (sinks.isEmpty()) {
+                continue; // 循环依赖等异常形态 — 保守跳过
+            }
+
+            // 每个汇：依赖闭包 → 重建规则
+            String blockSource = text.substring(blockStart, Math.min(blockEnd, text.length())).trim();
+            List<Rule> rebuilt = new ArrayList<>();
+            Set<String> covered = new LinkedHashSet<>();
+            for (String sink : sinks) {
+                Set<String> closure = dependencyClosure(sink, statements, blockTargets);
+                covered.addAll(closure);
+                List<Step> steps = new ArrayList<>();
+                String sinkDisplayName = null;
+                for (PositionedStep ps : statements) {
+                    String stepTarget = SpssUtil.normalize(ps.step.getTarget());
+                    if (closure.contains(stepTarget)) {
+                        steps.add(ps.step);
+                    }
+                    if (stepTarget.equals(sink) && sinkDisplayName == null) {
+                        sinkDisplayName = ps.step.getTarget();
+                    }
+                }
+                if (steps.isEmpty() || sinkDisplayName == null) {
+                    continue;
+                }
+                Rule rule = new Rule();
+                rule.setTarget(sinkDisplayName);
+                rule.setDescription(labels.get(sink));
+                rule.setSteps(steps);
+                rule.setSpssSource(blockSource);
+                List<String> sourceVars = new ArrayList<>();
+                for (String var : extractSourceVariablesFromSteps(steps, sinkDisplayName)) {
+                    if (!closure.contains(SpssUtil.normalize(var))) {
+                        sourceVars.add(var);
+                    }
+                }
+                rule.setSourceVariables(sourceVars);
+                rule.setJavaPreview(toJavaPreviewFromSteps(sinkDisplayName, steps));
+                rule.setType(classifyFromBlock(rule));
+                rebuilt.add(rule);
+            }
+            if (rebuilt.isEmpty() || !covered.containsAll(anchoredTargets)) {
+                // 有锚定规则未被任何汇的闭包覆盖 — 替换会丢逻辑，保守跳过
+                continue;
+            }
+
+            // 原碎片规则替换为重建规则（插在第一条碎片的位置，保持 $SYSMIS init 相邻性）
+            int insertAt = result.indexOf(inBlock.get(0));
+            result.removeAll(inBlock);
+            result.addAll(insertAt, rebuilt);
+        }
+        return result;
+    }
+
+    /**
+     * 汇变量在块内的依赖闭包：从 sink 出发，反复吸收其步骤消费的块内目标。
+     */
+    private static Set<String> dependencyClosure(String sink, List<PositionedStep> statements,
+                                                 Set<String> blockTargets) {
+        Set<String> closure = new LinkedHashSet<>();
+        closure.add(sink);
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (PositionedStep ps : statements) {
+                if (!closure.contains(SpssUtil.normalize(ps.step.getTarget()))) {
+                    continue;
+                }
+                for (String var : ps.step.sourceVariables()) {
+                    String normalized = SpssUtil.normalize(var);
+                    if (blockTargets.contains(normalized) && closure.add(normalized)) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+        return closure;
+    }
+
+    /**
+     * 重扫块区间内的全部赋值语句（COMPUTE / RECODE INTO / RECODE self / IF 赋值），
+     * 条件用全文 {@link #findActiveDoIfCondition} 解析以保留外层 DO IF 链。
+     * 与 Pass 1 不同：保留常量赋值（分支逻辑需要），仍跳过跨行去重临时变量。
+     */
+    private static List<PositionedStep> parseBlockStatements(String text, int blockStart, int blockEnd) {
+        String region = text.substring(blockStart, Math.min(blockEnd, text.length()));
+        List<PositionedStep> positioned = new ArrayList<>();
+
+        Matcher compute = COMPUTE_PATTERN.matcher(region);
+        while (compute.find()) {
+            String target = compute.group(1).trim();
+            if (isTransientDuplicateVariable(target)) {
+                continue;
+            }
+            String expression = compactExpression(compute.group(2));
+            int pos = blockStart + compute.start();
+            String condition = findActiveDoIfCondition(text, pos);
+            positioned.add(new PositionedStep(pos, new Step(condition, new ComputeAction(target, expression))));
+        }
+
+        Matcher recodeInto = RECODE_INTO_PATTERN.matcher(region);
+        while (recodeInto.find()) {
+            String sourceAndCases = recodeInto.group(1).trim();
+            String target = recodeInto.group(2).trim();
+            int firstCase = sourceAndCases.indexOf('(');
+            if (firstCase <= 0 || isTransientDuplicateVariable(target)) {
+                continue;
+            }
+            String source = sourceAndCases.substring(0, firstCase).trim();
+            String cases = sourceAndCases.substring(firstCase).trim();
+            int pos = blockStart + recodeInto.start();
+            String condition = findActiveDoIfCondition(text, pos);
+            positioned.add(new PositionedStep(pos,
+                    new Step(condition, new RecodeAction(source, target, parseRecodeCases(cases)))));
+        }
+
+        Matcher recodeSelf = RECODE_SELF_PATTERN.matcher(region);
+        while (recodeSelf.find()) {
+            String target = recodeSelf.group(1).trim();
+            if (isTransientDuplicateVariable(target)) {
+                continue;
+            }
+            int pos = blockStart + recodeSelf.start();
+            String condition = findActiveDoIfCondition(text, pos);
+            positioned.add(new PositionedStep(pos, new Step(condition,
+                    new RecodeAction(target, target, parseRecodeCases(recodeSelf.group(2).trim())))));
+        }
+
+        Matcher ifHead = Pattern.compile("(?im)^[ \\t]*IF\\s*\\(").matcher(region);
+        while (ifHead.find()) {
+            int parenStart = ifHead.end() - 1;
+            int parenEnd = findBalancedParen(region, parenStart);
+            if (parenEnd < 0) {
+                continue;
+            }
+            String after = region.substring(parenEnd + 1);
+            int dotIdx = after.indexOf('.');
+            if (dotIdx < 0) {
+                continue;
+            }
+            String assignment = after.substring(0, dotIdx).trim();
+            int eqIdx = assignment.indexOf('=');
+            if (eqIdx < 0) {
+                continue;
+            }
+            String target = assignment.substring(0, eqIdx).trim();
+            if (target.isEmpty() || isTransientDuplicateVariable(target)) {
+                continue;
+            }
+            String ifCondition = region.substring(parenStart + 1, parenEnd).trim();
+            String value = assignment.substring(eqIdx + 1).trim();
+            int pos = blockStart + ifHead.start();
+            String condition = findActiveDoIfCondition(text, pos);
+            positioned.add(new PositionedStep(pos,
+                    new Step(condition, new IfAssignAction(ifCondition, target, value))));
+        }
+
+        positioned.sort(new Comparator<PositionedStep>() {
+            @Override
+            public int compare(PositionedStep a, PositionedStep b) {
+                return Integer.compare(a.position, b.position);
+            }
+        });
+        return positioned;
+    }
+
+    /**
+     * 定位全部顶层 DO IF ... END IF 块的字符区间 [start, end)。
+     * 深度维护规则与 {@link #findActiveDoIfCondition} 一致（含非标准
+     * IF ... ELSE ... END IF 块的虚拟层，保证多余 END IF 配平）。
+     */
+    private static List<int[]> scanTopLevelDoIfBlocks(String text) {
+        List<int[]> blocks = new ArrayList<>();
+        Pattern pattern = Pattern.compile(
+                "(?is)\\bDO\\s+IF\\s*\\((.*?)\\)\\s*\\.|\\bELSE\\s*\\.|\\bEND\\s+IF\\s*\\.");
+        Matcher matcher = pattern.matcher(text);
+        List<Integer> posStack = new ArrayList<>();
+        int pendingStart = -1;
+
+        while (matcher.find()) {
+            String token = matcher.group(0).trim().toUpperCase(Locale.ROOT);
+            if (token.startsWith("DO IF")) {
+                if (posStack.isEmpty()) {
+                    pendingStart = matcher.start();
+                }
+                posStack.add(matcher.start());
+            } else if (token.startsWith("END IF")) {
+                if (!posStack.isEmpty()) {
+                    posStack.remove(posStack.size() - 1);
+                    if (posStack.isEmpty() && pendingStart >= 0) {
+                        blocks.add(new int[]{pendingStart, matcher.end()});
+                        pendingStart = -1;
+                    }
+                }
+            } else if (token.startsWith("ELSE")) {
+                int elsePos = matcher.start();
+                String beforeElse = text.substring(0, elsePos);
+                Matcher ifM = Pattern.compile("(?im)^[ \\t]*IF\\s*\\(").matcher(beforeElse);
+                int lastIfParen = -1;
+                while (ifM.find()) {
+                    lastIfParen = ifM.end() - 1;
+                }
+                int topPos = posStack.isEmpty() ? -1 : posStack.get(posStack.size() - 1);
+                if (lastIfParen > topPos) {
+                    // 非标准 IF ... ELSE ... END IF：虚拟层，由多余的 END IF 弹出
+                    posStack.add(elsePos);
+                }
+                // 标准 DO IF ... ELSE：深度不变
+            }
+        }
+        return blocks;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // RECODE INTO rules
     // ══════════════════════════════════════════════════════════════════════
 
-    private static List<Rule> parseRecodeIntoRules(String spssText, Map<String, String> labels) {
+    private static List<Rule> parseRecodeIntoRules(String spssText, Map<String, String> labels,
+                                                   Map<Rule, Integer> anchors) {
         List<Rule> rules = new ArrayList<>();
         Matcher matcher = RECODE_INTO_PATTERN.matcher(spssText);
         int consumedUntil = -1;
@@ -356,6 +652,7 @@ public final class RuleParser {
             rule.setSpssSource(block);
             rule.setJavaPreview(toJavaPreviewFromSteps(target, steps));
             rule.setType(classifyStepBased(block, sourceVars, steps));
+            anchors.put(rule, matcher.start());
             rules.add(rule);
             consumedUntil = blockEnd;
         }
@@ -366,7 +663,8 @@ public final class RuleParser {
     // Standalone IF rules
     // ══════════════════════════════════════════════════════════════════════
 
-    private static List<Rule> parseStandaloneIfAssignRules(String spssText, Map<String, String> labels) {
+    private static List<Rule> parseStandaloneIfAssignRules(String spssText, Map<String, String> labels,
+                                                           Map<Rule, Integer> anchors) {
         List<Rule> rules = new ArrayList<>();
         Pattern ifHead = Pattern.compile("(?im)^[ \\t]*IF\\s*\\(");
         Matcher m = ifHead.matcher(spssText);
@@ -448,6 +746,7 @@ public final class RuleParser {
             rule.setSpssSource(sourceBlock);
             rule.setJavaPreview("IF (" + condition + ") " + target + " = " + value);
             rule.setType(BlockClassifier.classifyConditional(deduped, sourceBlock));
+            anchors.put(rule, ifPos);
             rules.add(rule);
         }
         return rules;
@@ -621,7 +920,28 @@ public final class RuleParser {
                 }
             }
         }
-        return stack.isEmpty() ? null : stack.get(stack.size() - 1);
+        return chainConditions(stack);
+    }
+
+    /**
+     * AND 链接条件栈：单条件原样返回；多条件各自加括号后以 AND 连接，
+     * 避免条件内含 OR 时的优先级错误（ConditionExpression 已支持括号布尔分组）。
+     */
+    private static String chainConditions(List<String> stack) {
+        if (stack.isEmpty()) {
+            return null;
+        }
+        if (stack.size() == 1) {
+            return stack.get(0);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String cond : stack) {
+            if (sb.length() > 0) {
+                sb.append(" AND ");
+            }
+            sb.append('(').append(cond).append(')');
+        }
+        return sb.toString();
     }
 
     // ══════════════════════════════════════════════════════════════════════
