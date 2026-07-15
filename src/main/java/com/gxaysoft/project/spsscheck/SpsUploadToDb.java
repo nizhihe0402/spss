@@ -1,7 +1,6 @@
 package com.gxaysoft.project.spsscheck;
 
 import com.gxaysoft.project.spsscheck.engine.model.DatasetRule;
-import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
 import com.gxaysoft.project.spsscheck.engine.model.Rule;
 import com.gxaysoft.project.spsscheck.engine.model.RuleType;
 import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
@@ -61,7 +60,6 @@ public class SpsUploadToDb {
                 ParsedScript parsed = SpssParser.parse(spsText);
                 List<Rule> rules = parsed.getRules();
                 List<DatasetRule> datasetRules = parsed.getDatasetRules();
-                List<OutputRule> outputRules = parsed.getOutputRules();
 
                 long tableId = ScriptQuestionMappingService.inferTableIdFromScriptName(spsName);
 
@@ -71,8 +69,8 @@ public class SpsUploadToDb {
                     repo.insertScriptQuestionMappings(scriptId,
                             ScriptQuestionMappingService.loadQuestionMappings(conn, tableId));
                 }
-                System.out.printf("  script_id=%d, %d rules, %d dataset rules, %d output rules%n",
-                        scriptId, rules.size(), datasetRules.size(), outputRules.size());
+                System.out.printf("  script_id=%d, %d rules, %d dataset rules%n",
+                        scriptId, rules.size(), datasetRules.size());
 
                 // Insert check rules + steps
                 int sortNo = 0;
@@ -89,13 +87,6 @@ public class SpsUploadToDb {
                     wrapper.setCheckRule(true);
                     wrapper.setJavaPreview(dr.getJavaRule());
                     repo.insertRule(scriptId, sortNo, wrapper);
-                }
-
-                // Insert output rules
-                int outNo = 0;
-                for (OutputRule or : outputRules) {
-                    outNo++;
-                    repo.insertOutputRule(scriptId, outNo, or);
                 }
 
                 // Insert unsupported statements

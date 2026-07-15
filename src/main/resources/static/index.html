@@ -72,7 +72,6 @@ pre{margin:0}
 <table id="scriptTable" lay-filter="scriptTable"></table>
 <script type="text/html" id="scriptBar">
   <a class="layui-btn layui-btn-xs layui-btn-normal" lay-event="rules">规则</a>
-  <a class="layui-btn layui-btn-xs" lay-event="outputs">输出分组</a>
   <a class="layui-btn layui-btn-xs layui-btn-warm" lay-event="publish">{{d.status=='DRAFT'?'发布':'已发布'}}</a>
   <a class="layui-btn layui-btn-xs" lay-event="reparse">重新解析</a>
   <a class="layui-btn layui-btn-xs layui-btn-danger" lay-event="del">删除</a>
@@ -176,15 +175,6 @@ pre{margin:0}
   <div class="layui-card-header">完整执行链路</div>
   <div class="layui-card-body"><pre id="executionChain" style="white-space:pre-wrap;max-height:500px;overflow:auto;background:#fff5f5;padding:10px;font-size:12px"></pre></div>
 </div>
-</script>
-
-<!-- ═══ Output Rules ═══ -->
-<script type="text/html" id="tplOutputs">
-<div class="toolbar">
-  <button class="layui-btn layui-btn-sm layui-btn-primary" onclick="showRules()">← 返回</button>
-  <span style="margin-left:10px;font-size:16px;font-weight:bold" id="outputTitle"></span>
-</div>
-<table id="outputTable"></table>
 </script>
 
 <!-- ═══ Snippet Editor ═══ -->
@@ -345,7 +335,6 @@ layui.use(['table','element','upload','form','layer'], function(){
   table.on('tool(scriptTable)', function(obj){
     currentScriptId = obj.data.id; currentScriptName = obj.data.name;
     if(obj.event=='rules') showRules();
-    if(obj.event=='outputs') showOutputs();
     if(obj.event=='publish'){
       var s = obj.data.status=='DRAFT'?'PUBLISHED':'DRAFT';
       $.ajax({url:'/api/scripts/'+currentScriptId+'/status?status='+s, method:'PUT', success:function(){loadScripts()}});
@@ -373,7 +362,7 @@ layui.use(['table','element','upload','form','layer'], function(){
 
 // ═══ Page router ═══
 function showPage(page){
-  var tplMap = {scripts:'tplScripts',upload:'tplUpload',rules:'tplRules',detail:'tplDetail',outputs:'tplOutputs',snippet:'tplSnippet',run:'tplRun'};
+  var tplMap = {scripts:'tplScripts',upload:'tplUpload',rules:'tplRules',detail:'tplDetail',snippet:'tplSnippet',run:'tplRun'};
   $('#mainContent').html($('#'+tplMap[page]).html());
   if(element) element.render();
   if(form) form.render();
@@ -545,7 +534,7 @@ function submitUpload(){
     success:function(res){
       if(res.code==0){
         $('#uploadResult').html('<div class="layui-bg-green" style="padding:10px;color:#fff">上传成功! 脚本ID='+res.scriptId
-          +', '+res.rules+'条规则, '+res.outputRules+'个输出分组</div>');
+          +', '+res.rules+'条规则</div>');
         uploadFile = null;
         $('#uploadFileName').text('未选择文件').css('color','#999');
       }else{
@@ -642,24 +631,6 @@ function showDetail(){
   });
 }
 
-// ═══ Outputs ═══
-function showOutputs(){
-  $('#outputTitle').text(currentScriptName+' - 输出分组');
-  showPage('outputs');
-  $.get('/api/outputs?scriptId='+currentScriptId, function(res){
-    table.render({
-      elem:'#outputTable', data:res, page:false, height:'full-80',
-      cols:[[
-        {field:'sort',title:'#',width:50},
-        {field:'code',title:'编号',width:80},
-        {field:'name',title:'输出名称',width:240},
-        {field:'type',title:'类型',width:110,templet:function(d){return '<span class="tag '+d.type+'">'+d.type+'</span>'}},
-        {field:'condition',title:'筛选条件',width:280}
-      ]]
-    });
-  });
-}
-
 // ═══ Snippet ═══
 function initSnippet(){
   // Load scripts into dropdown
@@ -678,7 +649,7 @@ function previewSnippet(){
   $.ajax({url:'/api/snippet/preview', method:'POST', contentType:'application/json',
     data:JSON.stringify({spsText:text}), success:function(res){
       if(res.code!=0){ $('#previewResult').html('<div style="color:red">'+res.msg+'</div>'); return; }
-      var html = '<div style="color:green">共解析出 '+res.totalRules+' 条规则, '+res.totalOutputs+' 个输出分组</div>';
+      var html = '<div style="color:green">共解析出 '+res.totalRules+' 条规则</div>';
       res.rules.forEach(function(r){
         html += '<div style="margin:8px 0;padding:8px;background:#f8f8f8;border-left:3px solid #5FB878;font-size:13px">';
         html += '<b>'+htmlEscape(r.target||'')+'</b> ';

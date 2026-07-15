@@ -1,6 +1,5 @@
 package com.gxaysoft.project.spsscheck.web;
 
-import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
 import com.gxaysoft.project.spsscheck.engine.model.Rule;
 import com.gxaysoft.project.spsscheck.engine.model.RuleType;
 import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
@@ -66,7 +65,6 @@ public class ScriptController {
         result.put("code", 0);
         result.put("rules", parsed.getRules());
         result.put("datasetRules", parsed.getDatasetRules());
-        result.put("outputRules", parsed.getOutputRules());
         result.put("totalRules", parsed.totalRules());
         return result;
     }
@@ -112,21 +110,15 @@ public class ScriptController {
             jdbc.update("DELETE FROM sps_output_rule WHERE script_id=?", id);
             jdbc.update("DELETE FROM sps_unsupported_statement WHERE script_id=?", id);
 
-            // 重新解析
+            // 重新解析（输出分组 SELECT IF/SAVE OUTFILE 不再入库——数据走 _clean/_fail）
             ParsedScript parsed = SpssParser.parse(spsText);
             List<Rule> rules = parsed.getRules();
-            List<OutputRule> outputRules = parsed.getOutputRules();
 
             Long tableId = loadScriptTableId(id);
             int sortNo = 0;
             for (Rule rd : rules) {
                 sortNo++;
                 insertRule(id, sortNo, rd, tableId);
-            }
-            int outNo = 0;
-            for (OutputRule or : outputRules) {
-                outNo++;
-                insertOutputRule(id, outNo, or);
             }
             for (String[] stmt : SpsRepository.collectUnsupported(spsText)) {
                 jdbc.update("INSERT INTO sps_unsupported_statement (script_id, statement_type, reason, risk_level) VALUES (?,?,?,?)",
@@ -135,9 +127,8 @@ public class ScriptController {
             jdbc.update("UPDATE sps_script SET parse_status='PARSED', parse_message=NULL WHERE id=?", id);
 
             result.put("code", 0);
-            result.put("msg", "重新解析完成: " + rules.size() + " 条规则, " + outputRules.size() + " 个输出分组");
+            result.put("msg", "重新解析完成: " + rules.size() + " 条规则");
             result.put("rules", rules.size());
-            result.put("outputRules", outputRules.size());
         } catch (Exception e) {
             log.error("重新解析失败: scriptId={}", id, e);
             jdbc.update("UPDATE sps_script SET parse_status='FAILED', parse_message=? WHERE id=?",
@@ -229,15 +220,6 @@ public class ScriptController {
         }
         sb.append("]");
         return sb.toString();
-    }
-
-    private void insertOutputRule(long scriptId, int sortNo, OutputRule or) {
-        String code = String.format("O%03d", sortNo);
-        String type = or.getSheetName() != null && or.getSheetName().contains("清理后") ? "CLEAN_DATA" : "ERROR_GROUP";
-        jdbc.update("INSERT INTO sps_output_rule (script_id, output_code, output_name, output_type, " +
-                "select_condition, spss_source, java_preview, sort_no) VALUES (?,?,?,?,?,?,?,?)",
-                scriptId, code, or.getSheetName(), type,
-                or.getCondition(), or.getSpssSource(), or.getJavaRule(), sortNo);
     }
 
     private Long loadScriptTableId(long scriptId) {

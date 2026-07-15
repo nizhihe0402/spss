@@ -110,7 +110,7 @@ public class ExecutionService {
         ParsedScript parsed = SpssParser.parse(spsText);
         List<Rule> rules = parsed.getRules();
         List<DatasetRule> datasetRules = parsed.getDatasetRules();
-        List<OutputRule> outputRules = parsed.getOutputRules();
+        // 输出分组（SELECT IF/SAVE OUTFILE）不执行：通过/未通过数据分别落 _clean/_fail 表
 
         List<RowContext> rows = AnswerPivot.pivot(answers, mappings);
         StudentInfoEnricher.enrichRows(rows, dbStudentData.studentInfo);

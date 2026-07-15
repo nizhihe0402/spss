@@ -1,6 +1,5 @@
 package com.gxaysoft.project.spsscheck.web;
 
-import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
 import com.gxaysoft.project.spsscheck.engine.model.Rule;
 import com.gxaysoft.project.spsscheck.engine.model.RuleType;
 import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
@@ -52,10 +51,9 @@ public class UploadController {
             String scriptProjectType = (projectType != null && !projectType.trim().isEmpty()) ? projectType.trim() : null;
             String scriptTitle = buildScriptTitle(title, scriptProjectId, scriptTableId, name);
 
-            // Engine: unified parsing
+            // Engine: unified parsing（输出分组不再入库——数据走 _clean/_fail）
             ParsedScript parsed = SpssParser.parse(spsText);
             List<Rule> rules = parsed.getRules();
-            List<OutputRule> outputRules = parsed.getOutputRules();
 
             // Insert script with extended metadata
             KeyHolder keyHolder = new GeneratedKeyHolder();
@@ -82,12 +80,6 @@ public class UploadController {
                 sortNo++;
                 insertRuleV2(scriptId, sortNo, rd);
             }
-            // Insert output rules
-            int outNo = 0;
-            for (OutputRule or : outputRules) {
-                outNo++;
-                insertOutputRule(scriptId, outNo, or);
-            }
             for (String[] stmt : SpsRepository.collectUnsupported(spsText)) {
                 jdbc.update("INSERT INTO sps_unsupported_statement (script_id, statement_type, reason, risk_level) VALUES (?,?,?,?)",
                         scriptId, stmt[0], stmt[1], stmt[2]);
@@ -97,7 +89,6 @@ public class UploadController {
             result.put("scriptId", scriptId);
             result.put("tableId", scriptTableId);
             result.put("rules", rules.size());
-            result.put("outputRules", outputRules.size());
             result.put("msg", "上传成功: " + rules.size() + " 条规则(V2)");
         } catch (Exception e) {
             log.error("解析失败", e);
@@ -232,15 +223,6 @@ public class UploadController {
             new SpsRepository(conn).insertScriptQuestionMappings(
                     scriptId, ScriptQuestionMappingService.loadQuestionMappings(conn, tableId));
         }
-    }
-
-    private void insertOutputRule(long scriptId, int sortNo, OutputRule or) {
-        String code = String.format("O%03d", sortNo);
-        String type = or.getSheetName().contains("清理后") ? "CLEAN_DATA" : "ERROR_GROUP";
-        jdbc.update("INSERT INTO sps_output_rule (script_id, output_code, output_name, output_type, " +
-                "select_condition, spss_source, java_preview, sort_no) VALUES (?,?,?,?,?,?,?,?)",
-                scriptId, code, or.getSheetName(), type,
-                or.getCondition(), or.getSpssSource(), or.getJavaRule(), sortNo);
     }
 
     /** BOM-aware UTF-8 with GB18030 fallback (mirrors PrototypeFileReaders.readSpssText) */

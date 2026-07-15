@@ -157,24 +157,6 @@ public class SpsRepository {
         }
     }
 
-    // ── sps_output_rule ─────────────────────────────────────────
-
-    public void insertOutputRule(long scriptId, int sortNo, OutputRule rule) throws SQLException {
-        String sql = "INSERT INTO sps_output_rule (script_id, output_code, output_name, output_type, " +
-                "select_condition, spss_source, java_preview, sort_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setLong(1, scriptId);
-            ps.setString(2, String.format("O%03d", sortNo));
-            ps.setString(3, rule.getSheetName());
-            ps.setString(4, rule.getSheetName().contains("清理后") ? "CLEAN_DATA" : "ERROR_GROUP");
-            ps.setString(5, rule.getCondition());
-            ps.setString(6, rule.getSpssSource());
-            ps.setString(7, rule.getJavaRule());
-            ps.setInt(8, sortNo);
-            ps.executeUpdate();
-        }
-    }
-
     // ── sps_unsupported_statement ───────────────────────────────
 
     public void insertUnsupportedStatement(long scriptId, String stmtType, String reason, String riskLevel) throws SQLException {

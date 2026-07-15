@@ -1,6 +1,5 @@
 package com.gxaysoft.project.spsscheck.web;
 
-import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
 import com.gxaysoft.project.spsscheck.engine.model.Rule;
 import com.gxaysoft.project.spsscheck.engine.model.RuleType;
 import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
@@ -41,7 +40,6 @@ public class SnippetController {
 
             ParsedScript parsed = SpssParser.parse(spsText);
             List<Rule> rules = parsed.getRules();
-            List<OutputRule> outputRules = parsed.getOutputRules();
 
             Integer maxSort = jdbc.queryForObject(
                 "SELECT COALESCE(MAX(sort_no),0) FROM sps_rule WHERE script_id=?", Integer.class, scriptId);
@@ -52,17 +50,8 @@ public class SnippetController {
                 insertRuleV2(scriptId, sortNo, rd);
             }
 
-            Integer maxOut = jdbc.queryForObject(
-                "SELECT COALESCE(MAX(sort_no),0) FROM sps_output_rule WHERE script_id=?", Integer.class, scriptId);
-            int outNo = maxOut != null ? maxOut : 0;
-            for (OutputRule or : outputRules) {
-                outNo++;
-                insertOutputRuleInternal(scriptId, outNo, or);
-            }
-
             result.put("code", 0);
             result.put("rules", rules.size());
-            result.put("outputRules", outputRules.size());
             result.put("msg", "成功追加 " + rules.size() + " 条规则");
         } catch (Exception e) {
             result.put("code", 1); result.put("msg", "解析失败: " + e.getMessage());
@@ -84,7 +73,6 @@ public class SnippetController {
 
             ParsedScript parsed = SpssParser.parse(spsText);
             List<Rule> rules = parsed.getRules();
-            List<OutputRule> outputRules = parsed.getOutputRules();
 
             KeyHolder keyHolder = new GeneratedKeyHolder();
             jdbc.update(conn -> {
@@ -105,17 +93,11 @@ public class SnippetController {
                 sortNo++;
                 insertRuleV2(scriptId, sortNo, rd);
             }
-            int outNo = 0;
-            for (OutputRule or : outputRules) {
-                outNo++;
-                insertOutputRuleInternal(scriptId, outNo, or);
-            }
 
             result.put("code", 0);
             result.put("scriptId", scriptId);
             result.put("tableId", scriptTableId);
             result.put("rules", rules.size());
-            result.put("outputRules", outputRules.size());
             result.put("msg", "新建脚本 #" + scriptId + ", " + rules.size() + " 条规则");
         } catch (Exception e) {
             result.put("code", 1); result.put("msg", "解析失败: " + e.getMessage());
@@ -131,7 +113,6 @@ public class SnippetController {
             String spsText = body.getOrDefault("spsText", "");
             ParsedScript parsed = SpssParser.parse(spsText);
             List<Rule> rules = parsed.getRules();
-            List<OutputRule> outputRules = parsed.getOutputRules();
 
             List<Map<String, Object>> ruleList = new ArrayList<>();
             for (Rule r : rules) {
@@ -182,7 +163,6 @@ public class SnippetController {
             result.put("code", 0);
             result.put("rules", ruleList);
             result.put("totalRules", rules.size());
-            result.put("totalOutputs", outputRules.size());
         } catch (Exception e) {
             result.put("code", 1); result.put("msg", "解析失败: " + e.getMessage());
         }
@@ -251,15 +231,6 @@ public class SnippetController {
             new SpsRepository(conn).insertScriptQuestionMappings(
                     scriptId, ScriptQuestionMappingService.loadQuestionMappings(conn, tableId));
         }
-    }
-
-    private void insertOutputRuleInternal(long scriptId, int sortNo, OutputRule or) {
-        String code = String.format("O%03d", sortNo);
-        String type = or.getSheetName().contains("清理后") ? "CLEAN_DATA" : "ERROR_GROUP";
-        jdbc.update("INSERT INTO sps_output_rule (script_id, output_code, output_name, output_type, " +
-                "select_condition, spss_source, java_preview, sort_no) VALUES (?,?,?,?,?,?,?,?)",
-                scriptId, code, or.getSheetName(), type,
-                or.getCondition(), or.getSpssSource(), or.getJavaRule(), sortNo);
     }
 
     private static String truncate(String s, int max) {

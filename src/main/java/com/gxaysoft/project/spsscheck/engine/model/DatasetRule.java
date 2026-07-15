@@ -2,9 +2,9 @@ package com.gxaysoft.project.spsscheck.engine.model;
 
 import com.gxaysoft.project.spsscheck.model.RowContext;
 
-import java.math.BigDecimal;
+
 import java.util.ArrayList;
-import java.util.Comparator;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,25 +46,13 @@ public class DatasetRule {
         return javaRule;
     }
 
+    /**
+     * 重复样本标记：按 BY 变量保序分组，组内首条 FIRST=1、末条 LAST=1，其余 0。
+     * 等价于 SPSS 的 SORT CASES + MATCH FILES FIRST/LAST 语义（FIRST/LAST 标记
+     * 只依赖分组，不依赖排序），且不改变行的原始顺序——原实现的 rows.sort()
+     * 会打乱后续结果的展示顺序。
+     */
     public void execute(List<RowContext> rows) {
-        rows.sort(new Comparator<RowContext>() {
-            @Override
-            public int compare(RowContext left, RowContext right) {
-                BigDecimal l = left.getDecimal(sortVariable);
-                BigDecimal r = right.getDecimal(sortVariable);
-                if (l == null && r == null) {
-                    return 0;
-                }
-                if (l == null) {
-                    return -1;
-                }
-                if (r == null) {
-                    return 1;
-                }
-                return l.compareTo(r);
-            }
-        });
-
         Map<String, List<RowContext>> groups = new LinkedHashMap<>();
         for (RowContext row : rows) {
             Object value = row.get(byVariable);

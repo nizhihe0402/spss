@@ -1,6 +1,6 @@
 package com.gxaysoft.project.spsscheck;
 
-import com.gxaysoft.project.spsscheck.engine.model.OutputRule;
+
 import com.gxaysoft.project.spsscheck.engine.model.Rule;
 import com.gxaysoft.project.spsscheck.engine.model.RuleType;
 import com.gxaysoft.project.spsscheck.engine.parser.ParsedScript;
@@ -50,25 +50,16 @@ public class SpsUploadV2 {
                 // Unified parsing
                 ParsedScript parsed = SpssParser.parse(spsText);
                 List<Rule> rules = parsed.getRules();
-                List<OutputRule> outputRules = parsed.getOutputRules();
 
                 // Insert script
                 long scriptId = insertScript(conn, name, spsText);
-                System.out.printf("  script_id=%d, %d rules, %d output rules%n",
-                        scriptId, rules.size(), outputRules.size());
+                System.out.printf("  script_id=%d, %d rules%n", scriptId, rules.size());
 
                 // Insert rules
                 int sortNo = 0;
                 for (Rule rd : rules) {
                     sortNo++;
                     insertRuleV2(conn, scriptId, sortNo, rd);
-                }
-
-                // Insert output rules
-                int outNo = 0;
-                for (OutputRule or : outputRules) {
-                    outNo++;
-                    insertOutputRule(conn, scriptId, outNo, or);
                 }
 
                 // Unsupported statements
@@ -146,23 +137,6 @@ public class SpsUploadV2 {
                     || rt == RuleType.RANGE_CHECK
                     || rt == RuleType.CONSISTENCY_CHECK
                     || rt == RuleType.DOCUMENT_CHECK ? 1 : 0);
-            ps.executeUpdate();
-        }
-    }
-
-    static void insertOutputRule(Connection conn, long scriptId, int sortNo, OutputRule or) throws SQLException {
-        String code = String.format("O%03d", sortNo);
-        try (PreparedStatement ps = conn.prepareStatement(
-                "INSERT INTO sps_output_rule (script_id,output_code,output_name,output_type,select_condition," +
-                "spss_source,java_preview,sort_no) VALUES (?,?,?,?,?,?,?,?)")) {
-            ps.setLong(1, scriptId);
-            ps.setString(2, code);
-            ps.setString(3, or.getSheetName());
-            ps.setString(4, or.getSheetName().contains("清理后") ? "CLEAN_DATA" : "ERROR_GROUP");
-            ps.setString(5, or.getCondition());
-            ps.setString(6, or.getSpssSource());
-            ps.setString(7, or.getJavaRule());
-            ps.setInt(8, sortNo);
             ps.executeUpdate();
         }
     }
