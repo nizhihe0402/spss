@@ -575,17 +575,22 @@ public final class RuleParser {
                 "(?is)\\bDO\\s+IF\\s*\\((.*?)\\)\\s*\\.|\\bELSE\\s*\\.|\\bEND\\s+IF\\s*\\.");
         Matcher matcher = pattern.matcher(prefix);
         List<String> stack = new ArrayList<>();
+        // 与 stack 平行：记录每个条目入栈时对应 token 在 prefix 中的起始位置，
+        // 用于判断 ELSE 归属（属于标准 DO IF，还是脚本中非标准的 IF ... ELSE ... END IF 块）
+        List<Integer> stackPos = new ArrayList<>();
 
         while (matcher.find()) {
             String token = matcher.group(0).trim().toUpperCase(Locale.ROOT);
             if (token.startsWith("DO IF")) {
                 stack.add(matcher.group(1).trim());
+                stackPos.add(matcher.start());
             } else if (token.startsWith("END IF")) {
                 if (!stack.isEmpty()) {
                     stack.remove(stack.size() - 1);
+                    stackPos.remove(stackPos.size() - 1);
                 }
             } else if (token.startsWith("ELSE")) {
-                // Check for a preceding regular IF (not DO IF)
+                // Locate the last regular IF (not DO IF) before this ELSE
                 int elsePos = matcher.start();
                 String beforeElse = prefix.substring(0, elsePos);
                 Pattern ifPat = Pattern.compile("(?im)^[ \\t]*IF\\s*\\(");
@@ -594,19 +599,25 @@ public final class RuleParser {
                 while (ifM.find()) {
                     lastIfParen = ifM.end() - 1;
                 }
-                if (lastIfParen >= 0) {
+                int topPos = stackPos.isEmpty() ? -1 : stackPos.get(stackPos.size() - 1);
+                if (lastIfParen > topPos) {
+                    // The regular IF opened after the innermost DO IF — this ELSE closes a
+                    // non-standard IF ... ELSE ... END IF block: push the negated IF condition
+                    // (its later END IF pops it back off).
                     int end = findBalancedParen(beforeElse, lastIfParen);
                     if (end > lastIfParen) {
                         String ifCond = beforeElse.substring(lastIfParen + 1, end).trim();
                         if (!ifCond.isEmpty()) {
-                            stack.add(ifCond);
+                            stack.add("NOT(" + ifCond + ")");
+                            stackPos.add(elsePos);
                         }
                     }
-                }
-                // Pop the last condition and push its negation
-                if (!stack.isEmpty()) {
+                } else if (!stack.isEmpty()) {
+                    // Standard DO IF ... ELSE: replace top with its negation
                     String cond = stack.remove(stack.size() - 1);
+                    stackPos.remove(stackPos.size() - 1);
                     stack.add("NOT(" + cond + ")");
+                    stackPos.add(elsePos);
                 }
             }
         }
