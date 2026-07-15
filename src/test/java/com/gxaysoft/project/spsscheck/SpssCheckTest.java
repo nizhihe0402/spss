@@ -90,8 +90,8 @@ class SpssCheckTest {
     @DisplayName("表2-1: partial executability (unsupported SPSS functions)")
     void testTable21() throws Exception {
         // DO IF 块聚合后 SFZ_DATE/ID_DATE/BIRTH_DATE/#gender_bit 并入汇规则（38→34）；
-        // 同名相邻段合并后 身份证出生日期异常 两版计算合为一条（34→33）
-        runAndVerify(new TableFixture("表2-1", 40, 12, 33, 3));
+        // 迭代多版（身份证出生日期异常两版）按用户决定各自保留，不聚合
+        runAndVerify(new TableFixture("表2-1", 40, 12, 34, 3));
     }
 
     @Test

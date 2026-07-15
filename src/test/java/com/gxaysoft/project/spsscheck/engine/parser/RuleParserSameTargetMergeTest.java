@@ -10,10 +10,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 同名目标相邻代码段合并：脚本作者迭代写法（同一检查变量被相邻的多个
- * DO IF 块先后计算，中间只隔标签/统计/输出语句）应合并为一条规则，
- * 步骤按源码顺序执行（后算覆盖前算，与 SPSS 逐行执行语义一致）。
- * 隔着其他目标变量计算段的同名段不合并。
+ * 同名目标相邻段处理（用户决定 2026-07-15）：
+ * 迭代写法的多版计算【各自保留为独立规则，不互相聚合】——每版含自己的
+ * $SYSMIS 初始化步骤；init 规则按文本相邻并入紧随其后的实体规则
+ * （修复 mergeInitDeclarations 遇连续 init 静默丢弃的问题）。
  */
 public class RuleParserSameTargetMergeTest {
 
@@ -46,25 +46,50 @@ public class RuleParserSameTargetMergeTest {
             "EXECUTE.\n";
 
     @Test
-    public void mergesIteratedSameTargetBlocksIntoOneRule() {
+    public void keepsIteratedVersionsAsSeparateRulesWithOwnInit() {
         ParsedScript parsed = SpssParser.parse(ITERATED_SCRIPT);
         List<Rule> rules = rulesByTarget(parsed, "出生日期异常");
-        assertEquals(1, rules.size(), "迭代写法应合并为一条规则，实际: " + describe(parsed));
+        assertEquals(2, rules.size(), "迭代写法两版应各自保留为独立规则，实际: " + describe(parsed));
         assertTrue(rulesByTarget(parsed, "SFZ_DATE").isEmpty(), "中间变量不应独立成规则");
 
-        // 第一版计算的步骤在前，第二版在后（含中间的 $SYSMIS 重置）
-        Rule rule = rules.get(0);
-        int firstVersion = -1, reInit = -1, secondVersion = -1;
-        for (int i = 0; i < rule.getSteps().size(); i++) {
-            Step s = rule.getSteps().get(i);
-            String preview = s.javaPreview();
-            if (preview.contains("NUMBER(CHAR.SUBSTR") && firstVersion < 0) firstVersion = i;
-            if (preview.contains("$SYSMIS") && firstVersion >= 0 && reInit < 0) reInit = i;
-            if ("SFZ_DATE".equals(s.getTarget())) secondVersion = i;
+        // 每版都以自己的 $SYSMIS 初始化开头（init 不再被静默丢弃）
+        for (Rule rule : rules) {
+            assertFalse(rule.getSteps().isEmpty(), "版本规则应有步骤");
+            Step first = rule.getSteps().get(0);
+            assertTrue(first.javaPreview().contains("$SYSMIS"),
+                    "每版首步应为 $SYSMIS 初始化，实际: " + first.javaPreview());
         }
-        assertTrue(firstVersion >= 0, "缺少第一版计算步骤: " + rule.getSteps().size() + " steps");
-        assertTrue(reInit > firstVersion, "两版之间应保留 $SYSMIS 重置步骤（顺序执行语义）");
-        assertTrue(secondVersion > reInit, "第二版计算应在重置之后");
+
+        // 第一版含 NUMBER 直算比对，第二版含 SFZ_DATE 中间步骤
+        boolean v1 = false, v2 = false;
+        for (Rule rule : rules) {
+            for (Step s : rule.getSteps()) {
+                if (s.javaPreview().contains("NUMBER(CHAR.SUBSTR")) v1 = true;
+                if ("SFZ_DATE".equals(s.getTarget())) v2 = true;
+            }
+        }
+        assertTrue(v1, "第一版计算步骤缺失");
+        assertTrue(v2, "第二版中间步骤缺失");
+    }
+
+    /** init($SYSMIS) 按文本相邻并入实体规则（证件位数异常形态）。 */
+    @Test
+    public void initIsAbsorbedIntoFollowingRuleByTextAdjacency() {
+        String script =
+                "COMPUTE 位数异常 = $SYSMIS.\n" +
+                "DO IF (NOT MISSING(zjtype)).\n" +
+                "   COMPUTE 位数异常 = 0.\n" +
+                "   IF ((STRING(zjtype, F1)=\"1\" AND CHAR.LENGTH(SFZ) <> 18)) 位数异常=1.\n" +
+                "END IF.\n" +
+                "EXECUTE.\n" +
+                "\n" +
+                "COMPUTE 别的变量 = Q1 + 1.\n" +
+                "EXECUTE.\n";
+        ParsedScript parsed = SpssParser.parse(script);
+        List<Rule> rules = rulesByTarget(parsed, "位数异常");
+        assertEquals(1, rules.size(), "init 应并入实体规则而不是独立成规则: " + describe(parsed));
+        assertTrue(rules.get(0).getSteps().get(0).javaPreview().contains("$SYSMIS"),
+                "首步应为 $SYSMIS 初始化");
     }
 
     /** 隔着其他目标变量计算段的同名段：不合并。 */

@@ -631,16 +631,14 @@ public final class RuleParser {
     // ══════════════════════════════════════════════════════════════════════
 
     /**
-     * 同名目标相邻代码段合并（脚本作者迭代写法，如表2-1 身份证出生日期异常
-     * 被两个相邻 DO IF 块先后计算）。合并条件（全部满足）：
-     * <ul>
-     *   <li>同一目标变量存在 ≥2 条"实体"规则（有步骤或有非 init 表达式）；</li>
-     *   <li>相邻成员在原文中不重叠（重叠碎片如 RECODE 链内嵌 IF 暂不处理）；</li>
-     *   <li>成员之间的间隙只含统计/标签/输出语句或同目标赋值（含 $SYSMIS 重置），
-     *       一旦隔着其他目标变量的计算段即不合并。</li>
-     * </ul>
-     * 合并后步骤按源码顺序串接（含中间的 $SYSMIS 重置步骤），与 SPSS 逐行
-     * 执行、后算覆盖前算的语义一致。
+     * 同名目标相邻段处理（用户决定 2026-07-15：迭代多版不聚合）。
+     * 只做一件事：init($SYSMIS) 规则按文本相邻并入紧随其后的同目标实体规则，
+     * 成为其 step 0。修复 mergeInitDeclarations 依赖列表相邻、遇连续 init
+     * 静默丢弃前一个的问题（表2-1 证件位数异常的 init 曾一直丢失）。
+     *
+     * <p>迭代写法的多版计算（如表2-1 身份证出生日期异常两个 DO IF 块）
+     * 各自保留为独立规则——run 在吸收到第一个实体成员后即封口，
+     * 不跨版聚合。隔着其他目标计算段的同名段同样不合并。</p>
      */
     private static List<Rule> mergeSameTargetSegments(String text, List<Rule> rules,
                                                       Map<Rule, Integer> anchors,
@@ -674,28 +672,28 @@ public final class RuleParser {
                 }
             });
 
-            // 按相邻性切分为若干 run
+            // 切分 run：若干前导 init + 至多一个实体成员（实体即封口，多版不聚合）
             List<List<Rule>> runs = new ArrayList<>();
             List<Rule> current = new ArrayList<>();
-            current.add(members.get(0));
-            for (int i = 1; i < members.size(); i++) {
-                Rule prev = current.get(current.size() - 1);
-                Rule next = members.get(i);
-                if (isAdjacentSameTarget(text, prev, next, anchors, targetKey)) {
-                    current.add(next);
-                } else {
+            for (Rule member : members) {
+                if (!current.isEmpty()) {
+                    Rule prev = current.get(current.size() - 1);
+                    if (!isAdjacentSameTarget(text, prev, member, anchors, targetKey)) {
+                        runs.add(current);
+                        current = new ArrayList<>();
+                    }
+                }
+                current.add(member);
+                if (!isInitRule(member)) {
                     runs.add(current);
                     current = new ArrayList<>();
-                    current.add(next);
                 }
             }
-            runs.add(current);
+            if (!current.isEmpty()) {
+                runs.add(current);
+            }
 
             for (List<Rule> run : runs) {
-                // ≥2 个成员且至少 1 个实体成员才合并：
-                // - 实体≥2：迭代写法（多版计算串接）
-                // - init+实体：init 降级为 $SYSMIS 步骤（mergeInitDeclarations 依赖
-                //   列表相邻，遇到连续 init 会静默丢弃前一个，按文本相邻合并更可靠）
                 int realCount = 0;
                 for (Rule r : run) {
                     if (!isInitRule(r)) {
