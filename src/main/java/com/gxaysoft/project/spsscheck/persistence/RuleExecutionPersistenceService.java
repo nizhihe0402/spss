@@ -91,12 +91,12 @@ public class RuleExecutionPersistenceService {
 
     public static String cleanTableName(String answerTable) {
         assertSafeTableName(answerTable);
-        return answerTable + "_clean";
+        return "sps_" + answerTable + "_clean";
     }
 
     public static String failTableName(String answerTable) {
         assertSafeTableName(answerTable);
-        return answerTable + "_fail";
+        return "sps_" + answerTable + "_fail";
     }
 
     public static List<Long> cleanSourceIds(PrototypeFileReaders.AnswerCsvLoadResult csvLoad,

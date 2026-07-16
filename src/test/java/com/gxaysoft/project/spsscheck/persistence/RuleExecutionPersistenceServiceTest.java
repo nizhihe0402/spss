@@ -16,15 +16,15 @@ class RuleExecutionPersistenceServiceTest {
 
     @Test
     void derivesCleanAndFailTableNamesFromAnswerTable() {
-        assertEquals("bus_doctor_answer_clean",
+        assertEquals("sps_bus_doctor_answer_clean",
                 RuleExecutionPersistenceService.cleanTableName("bus_doctor_answer"));
-        assertEquals("bus_doctor_answer_fail",
+        assertEquals("sps_bus_doctor_answer_fail",
                 RuleExecutionPersistenceService.failTableName("bus_doctor_answer"));
-        assertEquals("bus_doctor_answer_intervene_clean",
+        assertEquals("sps_bus_doctor_answer_intervene_clean",
                 RuleExecutionPersistenceService.cleanTableName("bus_doctor_answer_intervene"));
-        assertEquals("bus_student_answer_intervene_clean",
+        assertEquals("sps_bus_student_answer_intervene_clean",
                 RuleExecutionPersistenceService.cleanTableName("bus_student_answer_intervene"));
-        assertEquals("bus_student_answer_intervene_fail",
+        assertEquals("sps_bus_student_answer_intervene_fail",
                 RuleExecutionPersistenceService.failTableName("bus_student_answer_intervene"));
     }
 
