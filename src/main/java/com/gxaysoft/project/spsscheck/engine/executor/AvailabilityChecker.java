@@ -25,8 +25,30 @@ public final class AvailabilityChecker {
         for (String var : vars) availableVariables.add(SpssUtil.normalize(var));
     }
 
+    /**
+     * 宽松可用性：规则只要至少有一个步骤的源变量全部可用即可执行。
+     * 适用于归组规则（合并后源变量并集可能超出测试 fixture 列），
+     * 不可用步骤在 {@link com.gxaysoft.project.spsscheck.engine.model.Step#execute}
+     * 中因缺失变量导致条件求值为 false 而自然变为 no-op。
+     * 无步骤的规则（只有 expression）回落到原严格判定。
+     */
     public boolean isAvailable(Rule rule) {
         if (rule.getSourceVariables() == null) return true;
+        // 有步骤 → 只要至少一个步骤的源变量全部可用即可执行
+        if (rule.getSteps() != null && !rule.getSteps().isEmpty()) {
+            for (com.gxaysoft.project.spsscheck.engine.model.Step step : rule.getSteps()) {
+                boolean stepOk = true;
+                for (String var : step.sourceVariables()) {
+                    if (!availableVariables.contains(SpssUtil.normalize(var))) {
+                        stepOk = false;
+                        break;
+                    }
+                }
+                if (stepOk) return true; // 至少一步完全可用
+            }
+            return false; // 所有步骤都缺变量
+        }
+        // 无步骤 → 原严格判定
         for (String var : rule.getSourceVariables()) {
             if (!availableVariables.contains(SpssUtil.normalize(var))) return false;
         }

@@ -672,21 +672,29 @@ public final class RuleParser {
                 }
             });
 
-            // 切分 run：若干前导 init + 至多一个实体成员（实体即封口，多版不聚合）
+            // 切分 run：同名相邻段按变量名归组；$SYSMIS 重初始化为分版信号——
+            // 已含实体成员的 run 遇到 init 即封口（新版本另起规则）
             List<List<Rule>> runs = new ArrayList<>();
             List<Rule> current = new ArrayList<>();
+            boolean currentHasReal = false;
             for (Rule member : members) {
+                boolean breakRun = false;
                 if (!current.isEmpty()) {
                     Rule prev = current.get(current.size() - 1);
                     if (!isAdjacentSameTarget(text, prev, member, anchors, targetKey)) {
-                        runs.add(current);
-                        current = new ArrayList<>();
+                        breakRun = true; // 隔着其他目标计算段
+                    } else if (isInitRule(member) && currentHasReal) {
+                        breakRun = true; // $SYSMIS 重初始化 → 新版本
                     }
+                }
+                if (breakRun) {
+                    runs.add(current);
+                    current = new ArrayList<>();
+                    currentHasReal = false;
                 }
                 current.add(member);
                 if (!isInitRule(member)) {
-                    runs.add(current);
-                    current = new ArrayList<>();
+                    currentHasReal = true;
                 }
             }
             if (!current.isEmpty()) {
@@ -855,18 +863,9 @@ public final class RuleParser {
             if (target.isEmpty() || isTransientDuplicateVariable(target)) {
                 continue;
             }
-
-            // Skip if target already has a COMPUTE rule
-            boolean alreadyHasCompute = false;
-            for (Rule r : rules) {
-                if (SpssUtil.normalize(r.getTarget()).equals(SpssUtil.normalize(target))) {
-                    alreadyHasCompute = true;
-                    break;
-                }
-            }
-            if (alreadyHasCompute) {
-                continue;
-            }
+            // 注：同名 IF 不再跳过——每条 IF 赋值独立成规则，
+            // 由 Pass 5 按变量名归组（原 alreadyHasCompute 跳过会静默丢弃
+            // 表2-1 证件号码缺失 zjtype=2/3/4 分支的检查逻辑）
 
             // Skip IFs inside RECODE INTO blocks
             int ifPos = m.start();
@@ -875,7 +874,17 @@ public final class RuleParser {
                 continue;
             }
 
-            int blockEnd = findNextHardBoundary(spssText, ifPos);
+            // 块结束：下一个有效 EXECUTE（第一优先）/ 下一个 DO IF 或单行 IF
+            // （新段开始）/ 关键字兜底
+            int statementEnd = parenEnd + 1 + dotIdx + 1;
+            int blockEnd = minPositive(findNextHardBoundary(spssText, ifPos),
+                    findNextValidExecute(spssText, parenEnd));
+            blockEnd = minPositive(blockEnd,
+                    findNextStatementStartRegex(spssText, parenEnd, "DO\\s+IF"));
+            Matcher nextIf = Pattern.compile("(?im)^[ \\t]*IF\\s*\\(").matcher(spssText);
+            if (nextIf.find(statementEnd)) {
+                blockEnd = minPositive(blockEnd, nextIf.start());
+            }
             if (blockEnd < 0) {
                 blockEnd = spssText.length();
             }
@@ -1264,15 +1273,60 @@ public final class RuleParser {
 
     /**
      * Find the start of the next rule after {@code fromIndex}.
-     * Considers COMPUTE, RECODE INTO, and hard boundaries.
+     * 边界优先级（用户规格 2026-07-15）：深度 0 的 EXECUTE. 为第一优先级
+     * 段边界（DO IF 内的 EXECUTE 失效）；COMPUTE/RECODE INTO/关键字列表
+     * 保留为漏写 EXECUTE 时的兜底。
      */
     private static int nextRuleStart(String text, int fromIndex) {
+        int nextExecute = findNextValidExecute(text, fromIndex);
         int nextCompute = findNextStatementStart(text, fromIndex, "COMPUTE");
         int nextRecodeInto = findNextRecodeInto(text, fromIndex);
         int nextHardBoundary = findNextHardBoundary(text, fromIndex);
-        int next = minPositive(nextCompute, nextRecodeInto);
+        int next = minPositive(nextExecute, nextCompute);
+        next = minPositive(next, nextRecodeInto);
         next = minPositive(next, nextHardBoundary);
         return next < 0 ? text.length() : next;
+    }
+
+    /**
+     * 下一个有效 EXECUTE. 的位置：从头扫描 DO IF/ELSE/END IF/EXECUTE token
+     * 维护深度（与 {@link #scanTopLevelDoIfBlocks} 同规则，含非标准
+     * IF/ELSE/END IF 虚拟层），只有深度 0 的 EXECUTE 才是段边界——
+     * DO IF ... END IF 内部出现的 EXECUTE 失效。
+     */
+    private static int findNextValidExecute(String text, int fromIndex) {
+        Pattern pattern = Pattern.compile(
+                "(?is)\\bDO\\s+IF\\s*\\((.*?)\\)\\s*\\.|\\bELSE\\s*\\.|\\bEND\\s+IF\\s*\\.|\\bEXECUTE\\s*\\.");
+        Matcher matcher = pattern.matcher(text);
+        List<Integer> posStack = new ArrayList<>();
+        while (matcher.find()) {
+            String token = matcher.group(0).trim().toUpperCase(Locale.ROOT);
+            if (token.startsWith("DO IF")) {
+                posStack.add(matcher.start());
+            } else if (token.startsWith("END IF")) {
+                if (!posStack.isEmpty()) {
+                    posStack.remove(posStack.size() - 1);
+                }
+            } else if (token.startsWith("ELSE")) {
+                // 与 scanTopLevelDoIfBlocks 相同的非标准 IF/ELSE/END IF 虚拟层判定
+                int elsePos = matcher.start();
+                String beforeElse = text.substring(0, elsePos);
+                Matcher ifM = Pattern.compile("(?im)^[ \\t]*IF\\s*\\(").matcher(beforeElse);
+                int lastIfParen = -1;
+                while (ifM.find()) {
+                    lastIfParen = ifM.end() - 1;
+                }
+                int topPos = posStack.isEmpty() ? -1 : posStack.get(posStack.size() - 1);
+                if (lastIfParen > topPos) {
+                    posStack.add(elsePos);
+                }
+            } else if (token.startsWith("EXECUTE")) {
+                if (posStack.isEmpty() && matcher.start() >= fromIndex) {
+                    return matcher.start();
+                }
+            }
+        }
+        return -1;
     }
 
     private static int findNextRecodeInto(String text, int fromIndex) {
