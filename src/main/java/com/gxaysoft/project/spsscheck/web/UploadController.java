@@ -257,13 +257,13 @@ public class UploadController {
     }
 
     /**
-     * 构建脚本标题: 前端传入 > 项目名-表名 > SPS文件提取名
+     * 构建脚本标题: 前端传入 > 项目名 - 表名 - 文件名 > 文件名
      */
-    private String buildScriptTitle(String title, Long projectId, long tableId, String fallbackName) {
+    private String buildScriptTitle(String title, Long projectId, long tableId, String fileName) {
         if (title != null && !title.trim().isEmpty()) {
             return title.trim();
         }
-        // 从数据库查询项目名和表名，拼成 "项目名 - 表名"
+        // 从数据库查询项目名和表名
         String projName = null;
         String tableName = null;
         try {
@@ -280,16 +280,18 @@ public class UploadController {
                 tableName = stringValue(tbl.get("table_name"));
             }
         } catch (Exception ignored) {}
-        if (!isBlank(projName) || !isBlank(tableName)) {
-            StringBuilder sb = new StringBuilder();
-            if (!isBlank(projName)) sb.append(projName);
-            if (!isBlank(tableName)) {
-                if (sb.length() > 0) sb.append(" - ");
-                sb.append(tableName);
-            }
-            return sb.toString();
+        // 拼接: 项目名 - 表名 - 上传文件名
+        StringBuilder sb = new StringBuilder();
+        if (!isBlank(projName)) sb.append(projName);
+        if (!isBlank(tableName)) {
+            if (sb.length() > 0) sb.append(" - ");
+            sb.append(tableName);
         }
-        return fallbackName;
+        if (!isBlank(fileName)) {
+            if (sb.length() > 0) sb.append(" - ");
+            sb.append(fileName);
+        }
+        return sb.length() > 0 ? sb.toString() : fileName;
     }
 
     private static String stringValue(Object v) { return v == null ? "" : String.valueOf(v).trim(); }
