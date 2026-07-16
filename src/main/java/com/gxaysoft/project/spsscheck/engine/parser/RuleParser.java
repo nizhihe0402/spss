@@ -1437,11 +1437,19 @@ public final class RuleParser {
      * Searches for: the next RECODE INTO for a different target, the next COMPUTE,
      * or a hard statement boundary (SELECT IF, SAVE, etc.).
      */
+    /**
+     * RECODE INTO 链的块结束边界。
+     * EXECUTE 参与切段：同目标 RECODE 被 EXECUTE 分开后各自成块，
+     * 交由 Pass 5 按变量名重新归组（消除与 Pass 3 IF / Pass 2.5 self-RECODE
+     * 的重叠 x2 重复规则）。不同目标 RECODE / COMPUTE / 关键字仍优先兜底。
+     */
     private static int findBlockEndForTarget(String text, int fromIndex, String target) {
         int hardBoundary = findNextHardBoundary(text, fromIndex);
         int nextDifferentRecodeInto = findNextDifferentRecodeInto(text, fromIndex, target, hardBoundary);
         int nextCompute = findNextStatementStart(text, fromIndex, "COMPUTE");
+        int nextExecute = findNextValidExecute(text, fromIndex);
         int end = minPositive(nextDifferentRecodeInto, nextCompute);
+        end = minPositive(end, nextExecute);
         end = minPositive(end, hardBoundary);
         return end < 0 ? text.length() : end;
     }

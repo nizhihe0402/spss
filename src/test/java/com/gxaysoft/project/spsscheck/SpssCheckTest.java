@@ -69,7 +69,7 @@ class SpssCheckTest {
     @Test
     @DisplayName("表1-1: parse, pivot, execute all rules")
     void testTable11() throws Exception {
-        runAndVerify(new TableFixture("表1-1", 10, 5, 13, 1));
+        runAndVerify(new TableFixture("表1-1", 10, 5, 13, 1));  // 13 rules, 13 exec
     }
 
     @Test
@@ -89,9 +89,9 @@ class SpssCheckTest {
     @Test
     @DisplayName("表2-1: partial executability (unsupported SPSS functions)")
     void testTable21() throws Exception {
-        // DO IF 块聚合后 SFZ_DATE/ID_DATE/BIRTH_DATE/#gender_bit 并入汇规则（38→34）；
-        // 迭代多版（身份证出生日期异常两版）按用户决定各自保留，不聚合
-        runAndVerify(new TableFixture("表2-1", 40, 12, 34, 3));
+        // DO IF 块聚合：38→34；EXECUTE 边界修复后 Pass 2 碎片化，
+        // self-RECODE / 独立 IF 不再被长块吞并，按步级可用性检查筛掉 2 条
+        runAndVerify(new TableFixture("表2-1", 40, 12, 32, 3));
     }
 
     @Test
