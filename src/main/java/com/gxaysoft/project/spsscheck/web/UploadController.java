@@ -49,7 +49,9 @@ public class UploadController {
             Long scriptProjectId = (projectId != null && projectId.longValue() > 0) ? projectId : null;
             String scriptYear = (year != null && !year.trim().isEmpty()) ? year.trim() : null;
             String scriptProjectType = (projectType != null && !projectType.trim().isEmpty()) ? projectType.trim() : null;
-            String scriptTitle = buildScriptTitle(title, scriptProjectId, scriptTableId, name);
+            // 标题：入库用 项目-表，界面展示用 项目-表-文件名
+            String scriptTitle = buildScriptTitle(title, scriptProjectId, scriptTableId, name, true);
+            String scriptNameDb = buildScriptTitle(title, scriptProjectId, scriptTableId, name, false);
 
             // Engine: unified parsing（输出分组不再入库——数据走 _clean/_fail）
             ParsedScript parsed = SpssParser.parse(spsText);
@@ -62,7 +64,7 @@ public class UploadController {
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'PARSED', 1, 'DRAFT')";
             jdbc.update(conn -> {
                 PreparedStatement ps = conn.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS);
-                ps.setString(1, scriptTitle);
+                ps.setString(1, scriptNameDb);
                 ps.setString(2, spsText);
                 ps.setString(3, name);
                 ps.setLong(4, scriptTableId);
@@ -259,11 +261,14 @@ public class UploadController {
     /**
      * 构建脚本标题: 前端传入 > 项目名 - 表名 - 文件名 > 文件名
      */
-    private String buildScriptTitle(String title, Long projectId, long tableId, String fileName) {
+    /**
+     * @param includeFileName true=项目-表-文件名（界面展示） false=项目-表（入库）
+     */
+    private String buildScriptTitle(String title, Long projectId, long tableId,
+                                     String fileName, boolean includeFileName) {
         if (title != null && !title.trim().isEmpty()) {
             return title.trim();
         }
-        // 从数据库查询项目名和表名
         String projName = null;
         String tableName = null;
         try {
@@ -280,14 +285,13 @@ public class UploadController {
                 tableName = stringValue(tbl.get("table_name"));
             }
         } catch (Exception ignored) {}
-        // 拼接: 项目名 - 表名 - 上传文件名
         StringBuilder sb = new StringBuilder();
         if (!isBlank(projName)) sb.append(projName);
         if (!isBlank(tableName)) {
             if (sb.length() > 0) sb.append(" - ");
             sb.append(tableName);
         }
-        if (!isBlank(fileName)) {
+        if (includeFileName && !isBlank(fileName)) {
             if (sb.length() > 0) sb.append(" - ");
             sb.append(fileName);
         }
