@@ -1439,7 +1439,9 @@ public final class RuleParser {
 
     private static boolean hasRecodeForTarget(String text, int fromIndex, String target) {
         int nextCompute = indexOfIgnoreCase(text, "COMPUTE", fromIndex);
-        int end = nextCompute < 0 ? text.length() : nextCompute;
+        int nextExecute = findNextValidExecute(text, fromIndex);
+        int end = minPositive(nextCompute, nextExecute);
+        if (end < 0) end = text.length();
         String block = text.substring(fromIndex, end);
         Matcher matcher = RECODE_SELF_PATTERN.matcher(block);
         while (matcher.find()) {
