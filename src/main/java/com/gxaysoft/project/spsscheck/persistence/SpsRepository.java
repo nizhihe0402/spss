@@ -35,22 +35,23 @@ public class SpsRepository {
     // ── sps_rule ────────────────────────────────────────────────
 
     public void insertRule(long scriptId, int sortNo, Rule rule) throws SQLException {
-        String sources = String.join(",", rule.getSourceVariables());
+        String sources = rule.getSourceVariables() != null ? String.join(",", rule.getSourceVariables()) : "";
+        RuleType rt = rule.getType() != null ? rule.getType() : RuleType.CONDITIONAL_BLOCK;
         RuleCorrectionPlan correction = RuleCorrectionPlan.detect(
-                rule.isCheckRule() ? "ROW_CHECK" : "COMPUTE",
-                rule.getTarget(), sources, rule.getDescription());
+                rt.name(), rule.getTarget(), sources, rule.getDescription());
         String sql = "INSERT INTO sps_rule (script_id, rule_code, rule_name, rule_type, target_variable, " +
                 "source_variables, correction_enabled, correction_type, correction_variables, correction_source, " +
                 "correction_strategy, correction_apply_stage, correction_write_clean, correction_write_source, " +
-                "correction_description, spss_source, rule_json, java_preview, sort_no, affect_clean, warning_message) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "correction_description, spss_source, rule_json, java_preview, execution_chain, " +
+                "sort_no, affect_clean, warning_message) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             String ruleCode = String.format("R%03d", sortNo);
             String label = rule.getDescription() != null ? rule.getDescription() : rule.getTarget();
             ps.setLong(1, scriptId);
             ps.setString(2, ruleCode);
             ps.setString(3, label);
-            ps.setString(4, rule.isCheckRule() ? "ROW_CHECK" : "COMPUTE");
+            ps.setString(4, rt.name());
             ps.setString(5, rule.getTarget());
             ps.setString(6, sources);
             ps.setInt(7, correction.enabled ? 1 : 0);
@@ -66,9 +67,13 @@ public class SpsRepository {
             ps.setString(16, spssSource.length() > 65535 ? spssSource.substring(0, 65535) : spssSource);
             ps.setString(17, buildRuleJson(rule));
             ps.setString(18, rule.getJavaPreview() != null ? rule.getJavaPreview() : "");
-            ps.setInt(19, sortNo);
-            ps.setInt(20, rule.isCheckRule() ? 1 : 0);
-            ps.setString(21, rule.getDescription());
+            ps.setString(19, rule.getExecutionChain() != null ? rule.getExecutionChain() : "");
+            ps.setInt(20, sortNo);
+            boolean affect = rt == RuleType.IDENTITY_CHECK || rt == RuleType.MISSING_CHECK
+                    || rt == RuleType.RANGE_CHECK || rt == RuleType.CONSISTENCY_CHECK
+                    || rt == RuleType.DOCUMENT_CHECK || rt == RuleType.OUTCOME_DETERMINATION;
+            ps.setInt(21, affect ? 1 : 0);
+            ps.setString(22, rule.getDescription());
             ps.executeUpdate();
 
             try (ResultSet rs = ps.getGeneratedKeys()) {

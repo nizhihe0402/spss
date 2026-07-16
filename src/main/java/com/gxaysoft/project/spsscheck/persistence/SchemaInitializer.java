@@ -151,6 +151,7 @@ public class SchemaInitializer {
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_write_clean TINYINT DEFAULT 0 AFTER correction_apply_stage"); } catch (Exception ignored) {}
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_write_source TINYINT DEFAULT 0 AFTER correction_write_clean"); } catch (Exception ignored) {}
             try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN correction_description TEXT AFTER correction_write_source"); } catch (Exception ignored) {}
+            try { stmt.execute("ALTER TABLE sps_rule ADD COLUMN execution_chain LONGTEXT AFTER java_preview"); } catch (Exception ignored) {}
         }
     }
 }
