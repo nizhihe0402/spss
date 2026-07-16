@@ -756,7 +756,15 @@ public final class RuleParser {
         }
         for (PositionedStep ps : parseBlockStatements(text, gapStart, nextStart)) {
             if (!SpssUtil.normalize(ps.step.getTarget()).equals(targetKey)) {
-                return false; // 间隙内有其他目标的计算段
+                // RECODE / IF 赋值在间隙中不作为屏障——同一逻辑块内穿插赋值
+                // 的其他变量（如血压块 Q81/Q82/BPC 的 RECODE INTO 和 IF 穿插）
+                // 不应阻断归组；只有 COMPUTE 是真正隔离不同逻辑块的边界
+                // （COMPUTE 声明新变量或重置变量，语义上开启新段）。
+                StepAction action = ps.step.getAction();
+                if (action instanceof RecodeAction || action instanceof IfAssignAction) {
+                    continue;
+                }
+                return false;
             }
         }
         return true;
@@ -876,14 +884,18 @@ public final class RuleParser {
             if (isTransientDuplicateVariable(target) || isConstantAssignment(target)) {
                 continue;
             }
-            // 跳过已被 COMPUTE 规则的 hasRecodeForTarget 覆盖的情况
-            // （recodeSelfPattern 匹配成功 + COMPUTE 不存在或 COMPUTE 在另一段 → 独立）
             String casesText = matcher.group(2).trim();
             List<RecodeCase> cases = parseRecodeCases(casesText);
             RecodeAction action = new RecodeAction(target, target, cases);
             Step step = applyDoIfCondition(spssText, matcher.start(), action);
 
-            int blockEnd = nextRuleStart(spssText, matcher.end());
+            // self-RECODE 的块只收到下一个语句起始处（避免 consumedUntil 跳过紧随的
+            // 下一条 self-RECODE，如 舒张压可疑 RECODE 后紧跟 压差可疑 RECODE）
+            int nextStmt = findNextStatementStartRegex(spssText, matcher.end(), "(?:COMPUTE|RECODE|IF\\s*\\(|DO\\s+IF|EXECUTE)");
+            int blockEnd = minPositive(findNextValidExecute(spssText, matcher.end()),
+                    findNextHardBoundary(spssText, matcher.end()));
+            blockEnd = minPositive(blockEnd, nextStmt);
+            if (blockEnd < 0) blockEnd = spssText.length();
             String sourceBlock = spssText.substring(matcher.start(),
                     Math.min(blockEnd, spssText.length())).trim();
 
