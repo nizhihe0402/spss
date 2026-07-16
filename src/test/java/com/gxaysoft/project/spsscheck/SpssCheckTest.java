@@ -89,9 +89,8 @@ class SpssCheckTest {
     @Test
     @DisplayName("表2-1: partial executability (unsupported SPSS functions)")
     void testTable21() throws Exception {
-        // 块聚合 38→34；EXECUTE 边界 34→32；血压间隙松弛 32→32（exec）。
-        // 规则 41→37（收缩压x3→1、舒张压x2→1、压差x2→1）
-        runAndVerify(new TableFixture("表2-1", 37, 12, 32, 3));
+        // +14 结局判定（SELECT IF→规则）
+        runAndVerify(new TableFixture("表2-1", 51, 12, 32, 3));
     }
 
     @Test

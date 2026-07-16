@@ -141,11 +141,15 @@ public final class RuleParser {
         List<Rule> sameTargetMerged = mergeSameTargetSegments(spssText, aggregated, anchors, labels);
 
         List<Rule> merged = mergeInitDeclarations(sameTargetMerged, labels);
-        for (Rule r : merged) {
+
+        // ── Pass 6: SELECT IF → 结局判定规则 ─────────────────────────
+        List<Rule> withOutcomes = addOutcomeRules(spssText, merged, labels);
+
+        for (Rule r : withOutcomes) {
             r.setJavaPreview(buildJavaPreview(r));
             r.setExecutionChain(buildExecutionChain(r));
         }
-        return merged;
+        return withOutcomes;
     }
 
     /**
@@ -628,6 +632,83 @@ public final class RuleParser {
             }
         }
         return blocks;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Pass 6: SELECT IF → 结局判定规则
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 将 SELECT IF … SAVE OUTFILE 转换为结局判定规则。
+     * 如 {@code SELECT IF (收缩压可疑 = 1 OR 舒张压可疑=1 OR 压差可疑=1).}
+     * + SAVE OUTFILE='…11-表2-1-血压可疑-中小学.sav' → 规则"血压可疑"。
+     */
+    private static List<Rule> addOutcomeRules(String spssText, List<Rule> rules,
+                                               Map<String, String> labels) {
+        Pattern selectPattern = Pattern.compile(
+                "(?is)SELECT\\s+IF\\s*\\((.+?)\\)\\s*\\.");
+        Matcher sm = selectPattern.matcher(spssText);
+        List<Rule> result = new ArrayList<>(rules);
+        List<Rule> outcomes = new ArrayList<>();
+
+        while (sm.find()) {
+            String condition = sm.group(1).trim().replaceAll("\\s+", " ");
+            // 找紧随的 SAVE OUTFILE（最多 500 字符内）
+            String after = spssText.substring(sm.end(),
+                    Math.min(sm.end() + 500, spssText.length()));
+            Matcher saveM = Pattern.compile(
+                    "SAVE\\s+OUTFILE\\s*=\\s*'([^']+)'").matcher(after);
+            if (!saveM.find()) continue;
+            String savPath = saveM.group(1).trim();
+            String name = outcomeName(savPath);
+            if (name == null || name.isEmpty()) continue;
+
+            List<String> sourceVars = new ArrayList<>(
+                    SpssUtil.extractVariables(condition));
+            // 去重规范化
+            java.util.LinkedHashSet<String> dedup = new java.util.LinkedHashSet<>();
+            for (String v : sourceVars) dedup.add(v.toUpperCase(Locale.ROOT));
+            sourceVars = new ArrayList<>(dedup);
+            // 排除目标自身
+            sourceVars.removeIf(v -> SpssUtil.normalize(v).equals(SpssUtil.normalize(name)));
+
+            Rule rule = new Rule();
+            rule.setTarget(name);
+            rule.setDescription("结局判定：" + name);
+            rule.setSpssSource("SELECT IF (" + condition + ").\nSAVE OUTFILE='" + savPath + "'.");
+            rule.setSourceVariables(sourceVars);
+            rule.setSteps(new ArrayList<Step>());
+            rule.setExpression(condition + " ? 1 : 0");
+
+            // "清理后"不生成检查（已过滤数据）；其余按结局判定分类
+            rule.setType(name.contains("清理后")
+                    ? RuleType.COMPUTE_INTERMEDIATE : RuleType.OUTCOME_DETERMINATION);
+            rule.setJavaPreview(name + " = " + condition);
+            outcomes.add(rule);
+        }
+        result.addAll(outcomes);
+        return result;
+    }
+
+    /** 从 SAVE OUTFILE 路径中提取规则名。 */
+    static String outcomeName(String path) {
+        // 取最后一段去掉 .sav
+        String name = path.replace('\\', '/');
+        int slash = name.lastIndexOf('/');
+        name = slash >= 0 ? name.substring(slash + 1) : name;
+        if (name.toLowerCase(Locale.ROOT).endsWith(".sav"))
+            name = name.substring(0, name.length() - 4);
+
+        // 去掉后缀修饰：-中小学/-大学/-幼儿园/-中学/-小学/-高校/-D/-ID
+        name = name.replaceAll(
+                "-+(中小学|大学|幼儿园|中学|小学|高校|D|ID|初中|高中)$", "");
+        // 去掉前缀编号和表名：如 "01-表1-1-" "表1-1表1-1-"
+        name = name.replaceFirst("^(?:\\d{1,3}-)?表\\d+-\\d+(?:表\\d+-\\d+)?-+", "");
+        // 清理后过滤数据不生成检查
+        if (name.contains("清理后")) return null;
+        // 去掉末尾残留短横线和数字
+        name = name.replaceAll("-+$", "").trim();
+        return name.isEmpty() ? null : name;
     }
 
     // ══════════════════════════════════════════════════════════════════════
