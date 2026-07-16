@@ -129,8 +129,9 @@ public final class RuleParser {
             rules.add(rule);
         }
 
-        // ── Pass 2 & 3: RECODE INTO and standalone IF ─────────────────
+        // ── Pass 2 & 3: RECODE INTO, self-RECODE, and standalone IF ──
         rules.addAll(parseRecodeIntoRules(spssText, labels, anchors));
+        rules.addAll(parseSelfRecodeRules(spssText, labels, anchors));
         rules.addAll(parseStandaloneIfAssignRules(spssText, labels, anchors));
 
         // ── Pass 4: DO IF 块聚合（中间变量并入汇规则）──────────────────
@@ -712,9 +713,21 @@ public final class RuleParser {
                     continue;
                 }
                 Rule mergedRule = buildSameTargetMergedRule(run, labels);
-                int insertAt = result.indexOf(run.get(0));
-                result.removeAll(run);
-                result.add(insertAt, mergedRule);
+                // 重建列表避免 removeAll+add 因旧引用导致 IndexOutOfBounds
+                List<Rule> rebuilt = new ArrayList<>();
+                boolean inserted = false;
+                for (Rule r : result) {
+                    if (run.contains(r)) {
+                        if (!inserted) {
+                            rebuilt.add(mergedRule);
+                            inserted = true;
+                        }
+                        // 其余 run 成员丢弃
+                    } else {
+                        rebuilt.add(r);
+                    }
+                }
+                result = rebuilt;
                 anchors.put(mergedRule, anchors.get(run.get(0)));
             }
         }
@@ -829,6 +842,67 @@ public final class RuleParser {
             rule.setSpssSource(block);
             rule.setJavaPreview(toJavaPreviewFromSteps(target, steps));
             rule.setType(classifyStepBased(block, sourceVars, steps));
+            anchors.put(rule, matcher.start());
+            rules.add(rule);
+            consumedUntil = blockEnd;
+        }
+        return rules;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Self-RECODE rules（RECODE var (cases). — 无 INTO）
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 解析独立的 self-RECODE（无 INTO，如 RECODE 人员配备1 (0=0) (SYSMIS=1) (ELSE=1).）。
+     * 这些语句之前被 hasRecodeForTarget 挂在同名 COMPUTE 规则下；EXECUTE 边界把它们
+     * 分开后（COMPUTE 和 self-RECODE 不在同一段），需要独立成规则。
+     *
+     * <p>跳过已被 RECODE INTO 链覆盖的段落（由 parseRecodeIntoRules 的 consumedUntil 保证）。</p>
+     */
+    private static List<Rule> parseSelfRecodeRules(String spssText, Map<String, String> labels,
+                                                   Map<Rule, Integer> anchors) {
+        List<Rule> rules = new ArrayList<>();
+        Matcher matcher = RECODE_SELF_PATTERN.matcher(spssText);
+        int consumedUntil = -1;
+        while (matcher.find()) {
+            if (matcher.start() < consumedUntil) {
+                continue;
+            }
+            String target = matcher.group(1).trim();
+            if (isTransientDuplicateVariable(target) || isConstantAssignment(target)) {
+                continue;
+            }
+            // 跳过已被 COMPUTE 规则的 hasRecodeForTarget 覆盖的情况
+            // （recodeSelfPattern 匹配成功 + COMPUTE 不存在或 COMPUTE 在另一段 → 独立）
+            String casesText = matcher.group(2).trim();
+            List<RecodeCase> cases = parseRecodeCases(casesText);
+            RecodeAction action = new RecodeAction(target, target, cases);
+            Step step = applyDoIfCondition(spssText, matcher.start(), action);
+
+            int blockEnd = nextRuleStart(spssText, matcher.end());
+            String sourceBlock = spssText.substring(matcher.start(),
+                    Math.min(blockEnd, spssText.length())).trim();
+
+            List<Step> steps = new ArrayList<>();
+            steps.add(step);
+            List<String> sourceVars = new ArrayList<>();
+            sourceVars.add(target.toUpperCase(Locale.ROOT));
+            for (Step s : steps) {
+                for (String v : s.sourceVariables()) {
+                    String nv = v.toUpperCase(Locale.ROOT);
+                    if (!sourceVars.contains(nv)) sourceVars.add(nv);
+                }
+            }
+
+            Rule rule = new Rule();
+            rule.setTarget(target);
+            rule.setDescription(labels.get(SpssUtil.normalize(target)));
+            rule.setSteps(steps);
+            rule.setSourceVariables(sourceVars);
+            rule.setSpssSource(sourceBlock);
+            rule.setJavaPreview(toJavaPreviewFromSteps(target, steps));
+            rule.setType(classifyStepBased(sourceBlock, sourceVars, steps));
             anchors.put(rule, matcher.start());
             rules.add(rule);
             consumedUntil = blockEnd;
