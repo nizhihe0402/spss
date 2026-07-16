@@ -67,6 +67,11 @@ public class RecodeCase {
         return result;
     }
 
+    /** ELSE 分支必然匹配——无论源值是什么都会写入目标变量（真正的覆盖）。 */
+    public boolean isAlwaysWrites() {
+        return "else".equals(type);
+    }
+
     public boolean isCopyResult() {
         return result != null && "COPY".equalsIgnoreCase(result.trim());
     }

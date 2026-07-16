@@ -57,6 +57,9 @@ public class Step {
                 sb.append(")");
             }
             sb.append(" → ").append(getTarget());
+            if (ra.alwaysWrites()) {
+                sb.append(" → 覆盖").append(getTarget());
+            }
         } else if (action instanceof IfAssignAction) {
             IfAssignAction ia = (IfAssignAction) action;
             sb.append("IF(").append(ia.getCondition()).append(") ").append(getTarget()).append(" = ").append(ia.getValue());

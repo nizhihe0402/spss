@@ -180,9 +180,12 @@ public final class RuleParser {
                     }
                 }
                 sb.append(") → ").append(step.getTarget());
-                // 判断是否覆盖前面的值
-                if (i > 0) {
+                // 只有含 ELSE 的 RECODE 才必然写入（覆盖），仅有 SYSMIS/MISSING/特定值
+                // 的 RECODE 在不匹配时不写入目标变量，不算覆盖
+                if (i > 0 && ra.alwaysWrites()) {
                     sb.append(" → 覆盖").append(step.getTarget());
+                } else if (i == 0 && ra.alwaysWrites()) {
+                    // 第一步但含 ELSE → 无条件初始化
                 }
             } else if (step.getAction() instanceof IfAssignAction) {
                 IfAssignAction ia = (IfAssignAction) step.getAction();

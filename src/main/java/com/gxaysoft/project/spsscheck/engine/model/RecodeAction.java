@@ -27,9 +27,19 @@ public class RecodeAction implements StepAction {
         }
     }
 
+    /** 是否含 ELSE 分支——有 ELSE 时 RECODE 必然写入目标变量（真正的覆盖）。 */
+    public boolean alwaysWrites() {
+        if (cases != null) {
+            for (com.gxaysoft.project.spsscheck.model.RecodeCase c : cases) {
+                if (c.isAlwaysWrites()) return true;
+            }
+        }
+        return false;
+    }
+
     @Override public String target() { return target; }
     public String getSource() { return source; }
-    public List<RecodeCase> getCases() { return cases; }
+    public List<com.gxaysoft.project.spsscheck.model.RecodeCase> getCases() { return cases; }
 
     @Override
     public List<String> sourceVariables() {
