@@ -14,9 +14,14 @@ import java.sql.Connection;
 import java.util.List;
 
 /**
- * Reads all .sps files, parses them, and saves rules to MySQL database.
+ * Recursively reads all .sps files under a directory, parses them,
+ * and saves rules to MySQL database.  Per-script upsert — re-running
+ * is safe (deletes old rules for the same script name before inserting).
  *
- * Usage: java ... SpsUploadToDb [sps-dir]
+ * <pre>
+ * java -cp target/classes:mysql-connector.jar \\
+ *   com.gxaysoft.project.spsscheck.SpsUploadToDb [sps-dir]
+ * </pre>
  */
 public class SpsUploadToDb {
     public static void main(String[] args) throws Exception {
@@ -29,41 +34,49 @@ public class SpsUploadToDb {
 
         try (Connection conn = DbConnection.get()) {
             conn.setAutoCommit(false);
-
-            // Ensure tables exist
             SchemaInitializer.ensureTables(conn);
-            System.out.println("Tables verified/created.");
-
-            // Clean previous data for re-upload
-            conn.createStatement().execute("DELETE FROM sps_unsupported_statement");
-            conn.createStatement().execute("DELETE FROM sps_rule_step");
-            conn.createStatement().execute("DELETE FROM sps_output_rule");
-            conn.createStatement().execute("DELETE FROM sps_rule");
-            conn.createStatement().execute("DELETE FROM sps_script_question_mapping");
-            conn.createStatement().execute("DELETE FROM sps_script");
-            System.out.println("Previous data cleaned.");
+            System.out.println("Tables verified/created.\n");
 
             SpsRepository repo = new SpsRepository(conn);
 
-            List<Path> spsFiles = Files.list(spsDir)
-                    .filter(p -> p.toString().endsWith(".sps") && !p.getFileName().toString().startsWith("修"))
+            List<Path> spsFiles = Files.walk(spsDir)
+                    .filter(p -> p.toString().endsWith(".sps"))
                     .sorted()
                     .collect(java.util.stream.Collectors.toList());
 
+            int totalRules = 0, totalFiles = 0;
+
             for (Path spsFile : spsFiles) {
-                String spsName = spsFile.getFileName().toString().replace(".sps", "");
+                String name = spsDir.relativize(spsFile).toString().replace('\\', '/');
+                String spsName = name.replace(".sps", "");
                 System.out.println("--- " + spsName + " ---");
 
-                String spsText = PrototypeFileReaders.readSpssText(spsFile);
+                // Per-script upsert: delete old data for this script name
+                java.sql.Statement st = conn.createStatement();
+                st.execute("DELETE FROM sps_rule_step WHERE rule_id IN " +
+                        "(SELECT id FROM sps_rule WHERE script_id IN " +
+                        "(SELECT id FROM sps_script WHERE script_name='" +
+                        spsName.replace("'", "''") + "'))");
+                st.execute("DELETE FROM sps_rule WHERE script_id IN " +
+                        "(SELECT id FROM sps_script WHERE script_name='" +
+                        spsName.replace("'", "''") + "')");
+                st.execute("DELETE FROM sps_unsupported_statement WHERE script_id IN " +
+                        "(SELECT id FROM sps_script WHERE script_name='" +
+                        spsName.replace("'", "''") + "')");
+                st.execute("DELETE FROM sps_script WHERE script_name='" +
+                        spsName.replace("'", "''") + "'");
+                st.close();
 
-                // Parse
+                String spsText = PrototypeFileReaders.readSpssText(spsFile);
                 ParsedScript parsed = SpssParser.parse(spsText);
                 List<Rule> rules = parsed.getRules();
                 List<DatasetRule> datasetRules = parsed.getDatasetRules();
 
-                long tableId = ScriptQuestionMappingService.inferTableIdFromScriptName(spsName);
+                // Infer table_id from filename (strip subdirectory prefix)
+                String lookup = spsName.contains("/")
+                        ? spsName.substring(spsName.lastIndexOf('/') + 1) : spsName;
+                long tableId = ScriptQuestionMappingService.inferTableIdFromScriptName(lookup);
 
-                // Insert script
                 long scriptId = repo.insertScript(spsName, spsText, spsName, tableId);
                 if (tableId > 0) {
                     repo.insertScriptQuestionMappings(scriptId,
@@ -72,32 +85,30 @@ public class SpsUploadToDb {
                 System.out.printf("  script_id=%d, %d rules, %d dataset rules%n",
                         scriptId, rules.size(), datasetRules.size());
 
-                // Insert check rules + steps
                 int sortNo = 0;
                 for (Rule rule : rules) {
                     sortNo++;
                     repo.insertRule(scriptId, sortNo, rule);
                 }
-
-                // Insert dataset rules as special ROW_CHECK rules
                 for (DatasetRule dr : datasetRules) {
                     sortNo++;
                     Rule wrapper = new Rule(dr.getFirstVariable(), RuleType.DUPLICATE_MARK,
-                            dr.getSpssSource(), java.util.Collections.singletonList(dr.getByVariable()));
+                            dr.getSpssSource(),
+                            java.util.Collections.singletonList(dr.getByVariable()));
                     wrapper.setCheckRule(true);
                     wrapper.setJavaPreview(dr.getJavaRule());
                     repo.insertRule(scriptId, sortNo, wrapper);
                 }
-
-                // Insert unsupported statements
                 for (String[] stmt : SpsRepository.collectUnsupported(spsText)) {
                     repo.insertUnsupportedStatement(scriptId, stmt[0], stmt[1], stmt[2]);
                 }
+
+                totalRules += sortNo;
+                totalFiles++;
             }
 
             conn.commit();
-            System.out.println();
-            System.out.println("=== COMMIT OK ===");
+            System.out.println("\n=== COMMIT OK: " + totalFiles + " files, " + totalRules + " rules ===");
         }
     }
 }
