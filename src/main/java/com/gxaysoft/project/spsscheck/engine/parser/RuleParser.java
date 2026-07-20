@@ -151,6 +151,8 @@ public final class RuleParser {
         for (Rule r : withOutcomes) {
             r.setJavaPreview(buildJavaPreview(r));
             r.setExecutionChain(buildExecutionChain(r));
+            // 后处理：IF-assign 规则的 spssSource 反向拓到 DO IF 处
+            extendSourceToDoIf(spssText, r);
         }
         return withOutcomes;
     }
@@ -1725,6 +1727,57 @@ public final class RuleParser {
     private static int indexOfIgnoreCase(String text, String needle, int fromIndex) {
         return text.toLowerCase(Locale.ROOT).indexOf(needle.toLowerCase(Locale.ROOT), fromIndex);
     }
+
+    /** 后处理：IF-assign 的 spssSource 反向拓到其 DO IF 行。 */
+    private static void extendSourceToDoIf(String spssText, Rule rule) {
+        if (rule.getSpssSource() == null || rule.getSpssSource().isEmpty()) return;
+        // 取 spssSource 第一行作为定位特征（如 "IF (MISSING(sfz)..."）
+        String firstLine = rule.getSpssSource().split("\\r?\\n")[0].trim();
+        if (firstLine.isEmpty()) return;
+        // 只在有 DO IF 条件步骤时才拓
+        boolean hasDoIf = false;
+        if (rule.getSteps() != null) {
+            for (Step s : rule.getSteps()) {
+                if (s.getCondition() != null && !s.getCondition().isEmpty()) {
+                    hasDoIf = true; break;
+                }
+            }
+        }
+        if (!hasDoIf) return;
+        // 取源码中第一条 IF 行定位（跳过 COMPUTE 初始化行）
+        int ifPos = -1;
+        for (String line : rule.getSpssSource().split("\\r?\\n")) {
+            if (line.trim().toUpperCase(Locale.ROOT).startsWith("IF ")) {
+                ifPos = spssText.indexOf(line.trim());
+                break;
+            }
+        }
+        if (ifPos < 0) return;
+        // 向前搜索最近一个未关闭的 DO IF
+        String prefix = spssText.substring(Math.max(0, ifPos - 500), ifPos);
+        // 向后扫描 token，计算当前位置的 DO IF 深度
+        java.util.regex.Matcher tm = TOKEN_PATTERN_FOR_DOIF.matcher(prefix);
+        java.util.List<String> stack = new java.util.ArrayList<>();
+        int lastDoIfStart = -1;
+        while (tm.find()) {
+            String t = tm.group(0).trim().toUpperCase(Locale.ROOT);
+            if (t.startsWith("DO IF")) { stack.add(t); lastDoIfStart = tm.start(); }
+            else if (t.startsWith("END IF")) { if (!stack.isEmpty()) { stack.remove(stack.size()-1); lastDoIfStart = -1; } }
+            else if (t.startsWith("ELSE")) { /* 简化：忽略 ELSE */ }
+        }
+        if (lastDoIfStart >= 0 && !stack.isEmpty()) {
+            int doIfAbsStart = Math.max(0, ifPos - 500) + lastDoIfStart;
+            int srcEnd = ifPos + rule.getSpssSource().length();
+            String extended = spssText.substring(doIfAbsStart,
+                    Math.min(srcEnd + 200, spssText.length())).trim();
+            if (extended.length() > rule.getSpssSource().length()) {
+                rule.setSpssSource(extended);
+            }
+        }
+    }
+
+    private static final java.util.regex.Pattern TOKEN_PATTERN_FOR_DOIF = java.util.regex.Pattern.compile(
+            "(?is)\\bDO\\s+IF\\s*\\((.*?)\\)\\s*\\.|\\bELSE\\s*\\.|\\bEND\\s+IF\\s*\\.");
 
     private static boolean isConstantAssignment(String expression) {
         return expression != null && expression.matches("[+-]?\\d+(\\.\\d+)?");
