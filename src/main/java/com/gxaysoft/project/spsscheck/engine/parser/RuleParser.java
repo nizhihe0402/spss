@@ -142,8 +142,11 @@ public final class RuleParser {
 
         List<Rule> merged = mergeInitDeclarations(sameTargetMerged, labels);
 
-        // ── Pass 6: SELECT IF → 结局判定规则 ─────────────────────────
-        List<Rule> withOutcomes = addOutcomeRules(spssText, merged, labels);
+        // ── Pass 6: 常量初始化注入（COMPUTE X = 0 等 → 已有同名规则 step 0）──
+        List<Rule> withInits = injectConstantInits(spssText, merged);
+
+        // ── Pass 7: SELECT IF → 结局判定规则 ─────────────────────────
+        List<Rule> withOutcomes = addOutcomeRules(spssText, withInits, labels);
 
         for (Rule r : withOutcomes) {
             r.setJavaPreview(buildJavaPreview(r));
@@ -635,7 +638,72 @@ public final class RuleParser {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // Pass 6: SELECT IF → 结局判定规则
+    // Pass 6: 常量初始化注入
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 将 COMPUTE 目标 = 常量 作为 step 0 注入到已有的同名规则中。
+     * 如 COMPUTE 证件号码缺失 = 0. → 归入后续的证件号码缺失规则作为初始化步骤。
+     */
+    private static List<Rule> injectConstantInits(String spssText, List<Rule> rules) {
+        // 收集已有规则的目标
+        Set<String> existingTargets = new LinkedHashSet<>();
+        for (Rule r : rules) {
+            if (r.getTarget() != null) {
+                existingTargets.add(SpssUtil.normalize(r.getTarget()));
+            }
+        }
+
+        Matcher matcher = COMPUTE_PATTERN.matcher(spssText);
+        while (matcher.find()) {
+            String target = matcher.group(1).trim();
+            String expression = compactExpression(matcher.group(2));
+            if (!isConstantAssignment(expression)) continue;
+            // 常数数值表达式直接忽略（如 "1"）？只取 0
+            if (isTransientDuplicateVariable(target)) continue;
+
+            String normalizedTarget = SpssUtil.normalize(target);
+            if (!existingTargets.contains(normalizedTarget)) continue;
+
+            // 找第一个同名规则，在其步骤前插入常量初始化
+            for (Rule rule : rules) {
+                if (normalizedTarget.equals(SpssUtil.normalize(rule.getTarget()))) {
+                    // 已有同名步骤则跳过（常量已存在，避免重复）
+                    boolean alreadyHasConstStep = false;
+                    if (rule.getSteps() != null) {
+                        for (Step s : rule.getSteps()) {
+                            if (s.getAction() instanceof ComputeAction
+                                    && isConstantAssignment(((ComputeAction) s.getAction()).getExpression())) {
+                                alreadyHasConstStep = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (alreadyHasConstStep) break;
+
+                    String doIfCond = findActiveDoIfCondition(spssText, matcher.start());
+                    Step constStep = new Step(doIfCond, new ComputeAction(target, expression));
+                    List<Step> newSteps = new ArrayList<>();
+                    newSteps.add(constStep);
+                    if (rule.getSteps() != null) newSteps.addAll(rule.getSteps());
+                    rule.setSteps(newSteps);
+
+                    // 扩展 spssSource 包含常量初始化
+                    if (rule.getSpssSource() != null) {
+                        int blockEnd = nextRuleStart(spssText, matcher.end());
+                        String initSource = spssText.substring(matcher.start(),
+                                Math.min(blockEnd, spssText.length())).trim();
+                        rule.setSpssSource(initSource + "\n" + rule.getSpssSource());
+                    }
+                    break;
+                }
+            }
+        }
+        return rules;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Pass 7: SELECT IF → 结局判定规则
     // ══════════════════════════════════════════════════════════════════════
 
     /**

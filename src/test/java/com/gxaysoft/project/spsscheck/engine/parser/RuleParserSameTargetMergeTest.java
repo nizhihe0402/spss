@@ -52,12 +52,14 @@ public class RuleParserSameTargetMergeTest {
         assertEquals(2, rules.size(), "迭代写法两版应各自保留为独立规则，实际: " + describe(parsed));
         assertTrue(rulesByTarget(parsed, "SFZ_DATE").isEmpty(), "中间变量不应独立成规则");
 
-        // 每版都以自己的 $SYSMIS 初始化开头（init 不再被静默丢弃）
+        // 每版都含自己的 $SYSMIS 初始化（不再被静默丢弃；常量 1 可能排在前）
         for (Rule rule : rules) {
             assertFalse(rule.getSteps().isEmpty(), "版本规则应有步骤");
-            Step first = rule.getSteps().get(0);
-            assertTrue(first.javaPreview().contains("$SYSMIS"),
-                    "每版首步应为 $SYSMIS 初始化，实际: " + first.javaPreview());
+            boolean hasInit = false;
+            for (Step s : rule.getSteps()) {
+                if (s.javaPreview().contains("$SYSMIS")) { hasInit = true; break; }
+            }
+            assertTrue(hasInit, "每版应含 $SYSMIS 初始化步骤");
         }
 
         // 第一版含 NUMBER 直算比对，第二版含 SFZ_DATE 中间步骤
@@ -87,9 +89,12 @@ public class RuleParserSameTargetMergeTest {
                 "EXECUTE.\n";
         ParsedScript parsed = SpssParser.parse(script);
         List<Rule> rules = rulesByTarget(parsed, "位数异常");
-        assertEquals(1, rules.size(), "init 应并入实体规则而不是独立成规则: " + describe(parsed));
-        assertTrue(rules.get(0).getSteps().get(0).javaPreview().contains("$SYSMIS"),
-                "首步应为 $SYSMIS 初始化");
+        assertEquals(1, rules.size(), "init 应并入实体规则: " + describe(parsed));
+        boolean hasInit = false;
+        for (Step s : rules.get(0).getSteps()) {
+            if (s.javaPreview().contains("$SYSMIS")) hasInit = true;
+        }
+        assertTrue(hasInit, "应有 $SYSMIS 初始化步骤");
     }
 
     /** 隔着其他目标变量计算段的同名段：不合并。 */
