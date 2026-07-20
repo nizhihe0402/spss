@@ -921,7 +921,7 @@ public final class RuleParser {
             String normalizedTarget = SpssUtil.normalize(target);
             int blockEnd = findBlockEndForTarget(spssText, matcher.end(), target);
             String block = spssText.substring(matcher.start(), blockEnd).trim();
-            List<Step> steps = parseRuleSteps(block, target);
+            List<Step> steps = parseRuleSteps(block, target, spssText, matcher.start());
             if (steps.isEmpty()) {
                 continue;
             }
@@ -1109,6 +1109,14 @@ public final class RuleParser {
      * Steps are sorted by their textual position to preserve execution order.
      */
     static List<Step> parseRuleSteps(String block, String target) {
+        return parseRuleSteps(block, target, null, -1);
+    }
+
+    /**
+     * @param fullText 全文（用于 DO IF 条件解析，block 只是子串时 DO IF 在子串之外）
+     * @param textOffset block 在 fullText 中的起始位置
+     */
+    static List<Step> parseRuleSteps(String block, String target, String fullText, int textOffset) {
         List<PositionedStep> positioned = new ArrayList<>();
 
         // ── RECODE source (cases) INTO target ──────────────────────────
@@ -1122,7 +1130,9 @@ public final class RuleParser {
                     String cases = sourceAndCases.substring(firstCase).trim();
                     RecodeAction action = new RecodeAction(source, target, parseRecodeCases(cases));
                     int pos = recodeIntoMatcher.start();
-                    positioned.add(new PositionedStep(pos, applyDoIfCondition(block, pos, action)));
+                    positioned.add(new PositionedStep(pos,
+                            applyDoIfCondition(fullText != null ? fullText : block,
+                                    fullText != null ? textOffset + pos : pos, action)));
                 }
             }
         }
@@ -1135,7 +1145,9 @@ public final class RuleParser {
                 RecodeAction action = new RecodeAction(source, target,
                         parseRecodeCases(recodeSelfMatcher.group(2).trim()));
                 int pos = recodeSelfMatcher.start();
-                positioned.add(new PositionedStep(pos, applyDoIfCondition(block, pos, action)));
+                positioned.add(new PositionedStep(pos,
+                        applyDoIfCondition(fullText != null ? fullText : block,
+                                fullText != null ? textOffset + pos : pos, action)));
             }
         }
 
@@ -1166,7 +1178,9 @@ public final class RuleParser {
             String value = assignment.substring(eqIdx + 1).trim();
             IfAssignAction action = new IfAssignAction(condition, target, value);
             int pos = ifM.start();
-            positioned.add(new PositionedStep(pos, applyDoIfCondition(block, pos, action)));
+            positioned.add(new PositionedStep(pos,
+                    applyDoIfCondition(fullText != null ? fullText : block,
+                            fullText != null ? textOffset + pos : pos, action)));
         }
 
         // Sort by position to preserve textual order
