@@ -31,7 +31,7 @@ public final class SpssUtil {
             "YEAR", "MONTH", "MDAY", "SUBSTR", "ORDINAL", "SCALE", "LAYERED",
             "ANALYSIS", "FORMAT", "LEAVE", "SPLIT", "FILE", "OFF",
             "NOTABLE", "STATISTICS", "STDDEV", "MINIMUM", "MAXIMUM", "MEDIAN",
-            "COMPRESSED", "OUTFILE", "DROP", "FIRST", "LAST", "PRIMARY", "DUPLICATE",
+            "COMPRESSED", "OUTFILE", "DROP", "FIRST", "LAST", "DUPLICATE",
             "DISPLAY", "LABEL", "CATEGORIES", "KEY", "VALUE", "EMPTY", "EXCLUDE", "INCLUDE",
             "SELECT", "SAVE", "CASES", "MATCH", "ALL", "KEEP", "MAP", "RENAME", "MAKE",
             "TABLE", "VLABELS", "VARIABLES", "COUNT", "COLUMN", "ROW", "TOTAL", "POSITION",
