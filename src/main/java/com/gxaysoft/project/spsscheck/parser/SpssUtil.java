@@ -31,13 +31,36 @@ public final class SpssUtil {
             "YEAR", "MONTH", "MDAY", "SUBSTR", "ORDINAL", "SCALE", "LAYERED",
             "ANALYSIS", "FORMAT", "LEAVE", "SPLIT", "FILE", "OFF",
             "NOTABLE", "STATISTICS", "STDDEV", "MINIMUM", "MAXIMUM", "MEDIAN",
-            "COMPRESSED", "OUTFILE", "DROP", "FIRST", "LAST", "DUPLICATE",
+            "COMPRESSED", "OUTFILE", "DROP", "FIRST", "LAST", "PRIMARY", "DUPLICATE",
             "DISPLAY", "LABEL", "CATEGORIES", "KEY", "VALUE", "EMPTY", "EXCLUDE", "INCLUDE",
             "SELECT", "SAVE", "CASES", "MATCH", "ALL", "KEEP", "MAP", "RENAME", "MAKE",
             "TABLE", "VLABELS", "VARIABLES", "COUNT", "COLUMN", "ROW", "TOTAL", "POSITION",
             "TITLE", "SUBTITLE", "FOOTNOTE", "TEMPORARY", "FILTER", "DATASET", "NAME", "WINDOW",
             "ACTIVATE", "CLOSE", "SORT", "ASCENDING", "DESCENDING", "TO", "WITH"
     ));
+
+    /**
+     * 从条件表达式中提取变量（不限 KEYWORDS）——条件中如 PRIMARY、AND、OR、NOT
+     * 等可能既是关键字也是变量名，不应被 isLikelyVariable 过滤。
+     */
+    public static List<String> extractConditionVariables(String condition) {
+        String cleaned = stripCommentsAndStringLiterals(condition);
+        Matcher matcher = Pattern.compile("#?[\\p{L}_][\\p{L}\\p{N}_]*").matcher(cleaned);
+        LinkedHashMap<String, String> variables = new LinkedHashMap<>();
+        while (matcher.find()) {
+            String variable = matcher.group();
+            String normalized = normalize(variable);
+            // 仅过滤纯运算符和明显非变量（数字、单字符操作符等）
+            if (variable.length() <= 1 && !variable.startsWith("#")) continue;
+            if (variable.matches("\\d+")) continue;
+            // AND/OR/NOT 在条件中是运算符不是变量
+            if (normalized.equals("AND") || normalized.equals("OR") || normalized.equals("NOT")) continue;
+            // EQ/NE/GT/LT/GE/LE 是 SPSS 比较运算符
+            if (normalized.matches("^(EQ|NE|GT|LT|GE|LE)$")) continue;
+            variables.put(normalized, variable.toUpperCase(Locale.ROOT));
+        }
+        return new ArrayList<>(variables.values());
+    }
 
     public static List<String> extractVariables(String expression) {
         String cleaned = stripCommentsAndStringLiterals(expression);

@@ -26,7 +26,8 @@ public class Step {
     public List<String> sourceVariables() {
         Map<String, String> vars = new LinkedHashMap<>();
         if (condition != null) {
-            for (String v : SpssUtil.extractVariables(condition)) {
+            // 条件变量单独提取，不限 KEYWORDS（如 PRIMARY 在条件中是变量名）
+            for (String v : SpssUtil.extractConditionVariables(condition)) {
                 vars.put(SpssUtil.normalize(v), v.toUpperCase(Locale.ROOT));
             }
         }
