@@ -663,6 +663,16 @@ public final class RuleParser {
             String name = outcomeName(savPath);
             if (name == null || name.isEmpty()) continue;
 
+            // 已有同名规则 → 跳过（SELECT IF 引用的变量本身就是检查结果，不需要再生成结局规则）
+            boolean exists = false;
+            for (Rule r : rules) {
+                if (SpssUtil.normalize(name).equals(SpssUtil.normalize(r.getTarget()))) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (exists) continue;
+
             List<String> sourceVars = new ArrayList<>(
                     SpssUtil.extractVariables(condition));
             // 去重规范化

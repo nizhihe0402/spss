@@ -89,8 +89,8 @@ class SpssCheckTest {
     @Test
     @DisplayName("表2-1: partial executability (unsupported SPSS functions)")
     void testTable21() throws Exception {
-        // +14 结局判定（SELECT IF→规则）
-        runAndVerify(new TableFixture("表2-1", 51, 12, 32, 3));
+        // +9 结局判定（跳过 5 条已有同名规则的 SELECT IF）
+        runAndVerify(new TableFixture("表2-1", 46, 12, 32, 3));
     }
 
     @Test
