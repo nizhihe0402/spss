@@ -1767,10 +1767,22 @@ public final class RuleParser {
         }
         if (lastDoIfStart >= 0 && !stack.isEmpty()) {
             int doIfAbsStart = Math.max(0, ifPos - 500) + lastDoIfStart;
-            int srcEnd = ifPos + rule.getSpssSource().length();
             String extended = spssText.substring(doIfAbsStart,
-                    Math.min(srcEnd + 200, spssText.length())).trim();
-            if (extended.length() > rule.getSpssSource().length()) {
+                    Math.min(ifPos + 500, spssText.length())).trim();
+            // 截到最后一个 END IF 之后
+            int lastEndIf = extended.lastIndexOf("END IF.");
+            if (lastEndIf >= 0) {
+                int after = extended.indexOf('\n', lastEndIf);
+                if (after > 0) extended = extended.substring(0, after).trim();
+            }
+            // 保留原 source 中的 COMPUTE 初始化前缀
+            String srcFirstLine = rule.getSpssSource().trim().split("\\r?\\n")[0].trim();
+            if (srcFirstLine.toUpperCase(Locale.ROOT).startsWith("COMPUTE ")
+                    && !extended.startsWith(srcFirstLine)) {
+                extended = srcFirstLine + "\n" + extended;
+            }
+            // 只要扩展后包含 DO IF 就可替换（不用长度判定——injectConstantInits 可能已加长）
+            if (extended.toUpperCase(Locale.ROOT).contains("DO IF")) {
                 rule.setSpssSource(extended);
             }
         }
