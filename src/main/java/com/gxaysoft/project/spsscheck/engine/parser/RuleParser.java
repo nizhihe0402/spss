@@ -583,6 +583,60 @@ public final class RuleParser {
                     new Step(condition, new IfAssignAction(ifCondition, target, value))));
         }
 
+        // ── ELSE target = value.（SPSS 非标准 IF-ELSE 简写）──────────────
+        // 如 ELSE \n 身份证出生日期异常 = 1. — ELSE 后面不跟 IF/COMPUTE/RECODE，
+        // 直接是 target = value. 的形式。DO IF 条件栈已由 findActiveDoIfCondition
+        // 正确处理了非标准 IF...ELSE 的 NOT 条件。
+        Pattern elseAssign = Pattern.compile(
+                "(?im)^[ \\t]*ELSE[ \\t]*(?:\\r?\\n[ \\t]*)?"
+                        + "([#]?[\\p{L}_][\\p{L}\\p{N}_]*)\\s*=\\s*(.+?)\\.(?=\\s|$)",
+                Pattern.DOTALL);
+        Matcher elseM = elseAssign.matcher(region);
+        while (elseM.find()) {
+            String target = elseM.group(1).trim();
+            if (isTransientDuplicateVariable(target)) continue;
+            // 过滤 SPSS 关键字（如 ELSE\nCOMPUTE x = 1. 中 COMPUTE 误匹配）
+            String upper = target.toUpperCase(Locale.ROOT);
+            if (upper.matches("^(COMPUTE|RECODE|IF|STRING|NUMERIC|DO|END|VARIABLE|VALUE|"
+                    + "SELECT|SAVE|DATASET|FILTER|USE|FREQUENCIES|SORT|MATCH|FORMATS|"
+                    + "SPLIT|EXECUTE|ELSE|THRU|INTO|WITH|ALL|BY|TO)$")) {
+                continue;
+            }
+            String value = elseM.group(2).trim();
+            int pos = blockStart + elseM.start();
+            // 找前一个 IF 条件，取反作为 ELSE 分支的内层 IF 条件
+            // 如 IF (NOT MISSING(ID_DATE)) ... ELSE ... → MISSING(ID_DATE)
+            String elseCondition = null;
+            String beforeElse = region.substring(0, elseM.start());
+            Matcher prevIf = Pattern.compile("(?im)^[ \\t]*IF\\s*\\(").matcher(beforeElse);
+            int lastIfParen = -1;
+            while (prevIf.find()) {
+                lastIfParen = prevIf.end() - 1;
+            }
+            if (lastIfParen >= 0) {
+                int parenEnd = findBalancedParen(beforeElse, lastIfParen);
+                if (parenEnd > lastIfParen) {
+                    String ifCond = beforeElse.substring(lastIfParen + 1, parenEnd).trim();
+                    String ifUpper = ifCond.toUpperCase(Locale.ROOT).trim();
+                    if (ifUpper.startsWith("NOT(") && ifUpper.endsWith(")")) {
+                        elseCondition = ifCond.substring(4, ifCond.length() - 1).trim();
+                    } else if (ifUpper.startsWith("NOT ")) {
+                        elseCondition = ifCond.substring(4).trim();
+                    } else {
+                        elseCondition = "NOT(" + ifCond + ")";
+                    }
+                }
+            }
+            StepAction action;
+            if (elseCondition != null && !elseCondition.isEmpty()) {
+                action = new IfAssignAction(elseCondition, target, value);
+            } else {
+                action = new ComputeAction(target, value);
+            }
+            String condition = findActiveDoIfCondition(text, pos);
+            positioned.add(new PositionedStep(pos, new Step(condition, action)));
+        }
+
         positioned.sort(new Comparator<PositionedStep>() {
             @Override
             public int compare(PositionedStep a, PositionedStep b) {
@@ -686,16 +740,47 @@ public final class RuleParser {
                     String doIfCond = findActiveDoIfCondition(spssText, matcher.start());
                     Step constStep = new Step(doIfCond, new ComputeAction(target, expression));
                     List<Step> newSteps = new ArrayList<>();
-                    newSteps.add(constStep);
-                    if (rule.getSteps() != null) newSteps.addAll(rule.getSteps());
+                    if (rule.getSteps() != null) {
+                        // 若常量有 DO IF 条件（DO IF 块内条件赋值，如 COMPUTE = 1 inside DO IF），
+                        // 应放在 $SYSMIS 初始化之后、其他条件步骤之前，而非直接 step 0——
+                        // 否则无条件的 $SYSMIS 步骤会覆盖条件赋值的结果。
+                        int insertAt = 0;
+                        if (doIfCond != null && !doIfCond.trim().isEmpty()) {
+                            for (int i = 0; i < rule.getSteps().size(); i++) {
+                                Step s = rule.getSteps().get(i);
+                                if (s.getCondition() == null && s.getAction() instanceof ComputeAction) {
+                                    String expr = ((ComputeAction) s.getAction()).getExpression();
+                                    if (expr != null && expr.trim().equalsIgnoreCase("$SYSMIS")) {
+                                        insertAt = i + 1;
+                                    } else {
+                                        break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        for (int i = 0; i < insertAt; i++) {
+                            newSteps.add(rule.getSteps().get(i));
+                        }
+                        newSteps.add(constStep);
+                        for (int i = insertAt; i < rule.getSteps().size(); i++) {
+                            newSteps.add(rule.getSteps().get(i));
+                        }
+                    } else {
+                        newSteps.add(constStep);
+                    }
                     rule.setSteps(newSteps);
 
-                    // 扩展 spssSource 包含常量初始化
+                    // 扩展 spssSource 包含常量初始化——仅当源码段未包含时（避免连续
+                    // 区间取值已覆盖常量行时重复拼接）
                     if (rule.getSpssSource() != null) {
                         int blockEnd = nextRuleStart(spssText, matcher.end());
                         String initSource = spssText.substring(matcher.start(),
                                 Math.min(blockEnd, spssText.length())).trim();
-                        rule.setSpssSource(initSource + "\n" + rule.getSpssSource());
+                        if (!rule.getSpssSource().contains(initSource)) {
+                            rule.setSpssSource(initSource + "\n" + rule.getSpssSource());
+                        }
                     }
                     break;
                 }
@@ -877,6 +962,21 @@ public final class RuleParser {
                     continue;
                 }
                 Rule mergedRule = buildSameTargetMergedRule(run, labels);
+                // spssSource：取从第一条到末条的原文连续区间，消除片段拼接出现的
+                // 缺口。用 text.indexOf 定位末条源码在原文中的实际收束位置——
+                // spssSource 是 trimmed 的，直接用 length() 取不到原文精确末尾。
+                int textStart = anchors.get(run.get(0));
+                Rule lastRun = run.get(run.size() - 1);
+                int textEnd = anchors.get(lastRun);
+                String lastSource = lastRun.getSpssSource();
+                if (lastSource != null && !lastSource.isEmpty()) {
+                    int foundPos = text.indexOf(lastSource, textEnd);
+                    if (foundPos >= 0) {
+                        textEnd = foundPos + lastSource.length();
+                    }
+                }
+                textEnd = Math.min(textEnd, text.length());
+                mergedRule.setSpssSource(text.substring(textStart, textEnd).trim());
                 // 重建列表避免 removeAll+add 因旧引用导致 IndexOutOfBounds
                 List<Rule> rebuilt = new ArrayList<>();
                 boolean inserted = false;
@@ -1731,6 +1831,12 @@ public final class RuleParser {
     /** 后处理：IF-assign 的 spssSource 反向拓到其 DO IF 行。 */
     private static void extendSourceToDoIf(String spssText, Rule rule) {
         if (rule.getSpssSource() == null || rule.getSpssSource().isEmpty()) return;
+        // 若 spssSource 已含 DO IF（如 mergeSameTargetSegments 连续区间已覆盖），
+        // 无需再拓——避免误匹配其他 DO IF 块的子串（如 R006 的 IF 行在
+        // spssText.indexOf 中被 R005 的 DO IF 行匹配到，导致 source 被替换为 R005 代码）
+        if (rule.getSpssSource().toUpperCase(Locale.ROOT).contains("DO IF")) {
+            return;
+        }
         // 取 spssSource 第一行作为定位特征（如 "IF (MISSING(sfz)..."）
         String firstLine = rule.getSpssSource().split("\\r?\\n")[0].trim();
         if (firstLine.isEmpty()) return;
